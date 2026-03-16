@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		E901536A2F6881AD00F1F2B0 /* AudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E90153692F6881AD00F1F2B0 /* AudioKit */; };
+		E901536D2F6883F900F1F2B0 /* SoundpipeAudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXFileReference section */
 		E92A1D512F68777F00F41F5A /* DeepTune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepTune.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -23,6 +28,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				E901536D2F6883F900F1F2B0 /* SoundpipeAudioKit in Frameworks */,
+				E901536A2F6881AD00F1F2B0 /* AudioKit in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -65,6 +72,8 @@
 			);
 			name = DeepTune;
 			packageProductDependencies = (
+				E90153692F6881AD00F1F2B0 /* AudioKit */,
+				E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */,
 			);
 			productName = DeepTune;
 			productReference = E92A1D512F68777F00F41F5A /* DeepTune.app */;
@@ -94,6 +103,10 @@
 			);
 			mainGroup = E92A1D482F68777F00F41F5A;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				E90153682F6881AD00F1F2B0 /* XCRemoteSwiftPackageReference "AudioKit" */,
+				E901536B2F6883F900F1F2B0 /* XCRemoteSwiftPackageReference "SoundpipeAudioKit" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = E92A1D522F68777F00F41F5A /* Products */;
 			projectDirPath = "";
@@ -256,6 +269,7 @@
 				DEVELOPMENT_TEAM = 8356NA7XBK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune needs to access the microphone to tune your guitar.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -288,6 +302,7 @@
 				DEVELOPMENT_TEAM = 8356NA7XBK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune needs to access the microphone to tune your guitar.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -332,6 +347,38 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		E90153682F6881AD00F1F2B0 /* XCRemoteSwiftPackageReference "AudioKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AudioKit/AudioKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.6.5;
+			};
+		};
+		E901536B2F6883F900F1F2B0 /* XCRemoteSwiftPackageReference "SoundpipeAudioKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/AudioKit/SoundpipeAudioKit";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 5.7.3;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		E90153692F6881AD00F1F2B0 /* AudioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E90153682F6881AD00F1F2B0 /* XCRemoteSwiftPackageReference "AudioKit" */;
+			productName = AudioKit;
+		};
+		E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = E901536B2F6883F900F1F2B0 /* XCRemoteSwiftPackageReference "SoundpipeAudioKit" */;
+			productName = SoundpipeAudioKit;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = E92A1D492F68777F00F41F5A /* Project object */;
 }
