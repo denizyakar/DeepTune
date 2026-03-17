@@ -18,16 +18,20 @@ class TunerViewModel: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     
     init(instrument: Instrument = InstrumentCatalog.guitar6) {
-        self.currentInstrument = instrument
-        self.currentTuning = instrument.defaultTuning
-        
-        conductor.$data
-            .receive(on: RunLoop.main)
-            .sink { [weak self] data in
-                self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
-            }
-            .store(in: &cancellables)
-    }
+            self.currentInstrument = instrument
+            self.currentTuning = instrument.defaultTuning
+            
+            // Low E String chosen at the start
+            self.targetNote = instrument.defaultTuning.notes.first
+            self.isManualMode = true
+            
+            conductor.$data
+                .receive(on: RunLoop.main)
+                .sink { [weak self] data in
+                    self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
+                }
+                .store(in: &cancellables)
+        }
     
     func start() {
         conductor.start()
@@ -44,34 +48,29 @@ class TunerViewModel: ObservableObject {
     
     // Calculate difference between detected frequency and target frequency
     private func processAudioData(pitch: Float, amplitude: Float) {
-        self.currentPitch = pitch
-        self.currentAmplitude = amplitude
-        
-        guard pitch > 0 else { return }
-        
-        // Use manual target if selected, otherwise find closest in current tuning
-        let nearest: Note
-        if let target = targetNote, isManualMode {
-            nearest = target
-        } else {
-            nearest = findClosestNote(to: pitch, in: currentTuning.notes)
-            self.targetNote = nearest
+            self.currentPitch = pitch
+            self.currentAmplitude = amplitude
+            
+            // Ses yoksa veya hedef nota seçili değilse işlem yapma
+            guard pitch > 0, let target = targetNote else { return }
+            
+            // Sadece seçili olan hedef notanın frekansına göre cent farkını hesapla
+            let targetFrequency = Float(target.frequency)
+            let cents = 1200 * log2(pitch / targetFrequency)
+            
+            // UI titremesini önlemek için yumuşatma (Smoothing)
+            let smoothingFactor: Float = 0.2
+            self.centsDistance = (self.centsDistance * (1.0 - smoothingFactor)) + (cents * smoothingFactor)
+            
+            handleSuccessTracking()
         }
-        
-        // Calculates musical cents interval
-        // Formulated as: 1200 * log2(freq / target)
-        let cents = 1200 * log2(pitch / Float(nearest.frequency))
-        
-        // Simple smoothing for UI jitter
-        let smoothingFactor: Float = 0.2
-        let previousCents = self.centsDistance
-        self.centsDistance = (self.centsDistance * (1.0 - smoothingFactor)) + (cents * smoothingFactor)
-        
-        // Haptic Feedback for perfect tuning (within 2 cents)
-        if abs(self.centsDistance) < 2.0 && abs(previousCents) >= 2.0 {
-            HapticManager.shared.playSuccessHaptic()
-        }
-    }
+    
+    @Published var isAutoProgressEnabled: Bool = false
+    @Published var inTuneDuration: Double = 0.0 // Duration student is perfectly in tune
+    @Published var isTuningSuccessful: Bool = false // Becomes true when inTuneDuration > threshold
+    
+    private var inTuneStartTime: Date?
+    private let successThreshold: Double = 2.0 // Seconds
     
     // Finds the closest note to the given frequency among tuning notes
     private func findClosestNote(to frequency: Float, in notes: [Note]) -> Note {
@@ -88,5 +87,45 @@ class TunerViewModel: ObservableObject {
         
         return closestNote
     }
+    
+    private func handleSuccessTracking() {
+        if abs(self.centsDistance) < 5.0 {
+            if inTuneStartTime == nil {
+                inTuneStartTime = Date()
+            } else if let startTime = inTuneStartTime {
+                inTuneDuration = Date().timeIntervalSince(startTime)
+                if inTuneDuration >= successThreshold && !isTuningSuccessful {
+                    isTuningSuccessful = true
+                    HapticManager.shared.playSuccessHaptic()
+                    
+                    if isAutoProgressEnabled {
+                        progressToNextString()
+                    }
+                }
+            }
+        } else {
+            // Reset if out of tune
+            inTuneStartTime = nil
+            inTuneDuration = 0.0
+            isTuningSuccessful = false
+        }
+    }
+    
+    private func progressToNextString() {
+        guard let currentTarget = targetNote,
+              let currentIndex = currentTuning.notes.firstIndex(of: currentTarget) else { return }
+        
+        // Find next string (loop back or stop, we will loop for now)
+        let nextIndex = (currentIndex + 1) % currentTuning.notes.count
+        
+        // Small delay to let user see success before jumping
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+            guard let self = self else { return }
+            self.setTargetNote(self.currentTuning.notes[nextIndex])
+            // Force manual mode on to keep the specific target active
+            self.isManualMode = true
+        }
+    }
 }
+
 
