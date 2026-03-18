@@ -1,37 +1,91 @@
 import Foundation
 import Combine
 
-class TunerViewModel: ObservableObject {
+struct DetectedNote: Equatable {
+    let name: String
+    let octave: Int
+    let midiNumber: Int
+    let nearestFrequency: Float
+    let centsFromEqualTempered: Float
+}
+
+enum TunerMode: Hashable {
+    case auto
+    case manual
+}
+
+final class TunerViewModel: ObservableObject {
     @Published var currentInstrument: Instrument
     @Published var currentTuning: Tuning
     
-    // Values derived from AudioEngine
+    // Raw values coming from the audio layer.
     @Published var currentPitch: Float = 0.0
     @Published var currentAmplitude: Float = 0.0
+    @Published var isSignalDetected: Bool = false
+    @Published var isTargetSignalDetected: Bool = false
+    @Published var hasPitchReference: Bool = false
     
-    // Processed tunings
-    @Published var centsDistance: Float = 0.0
+    // Auto mode output (target-string based).
+    @Published var autoCentsDistance: Float = 0.0
     @Published var targetNote: Note?
-    @Published var isManualMode: Bool = false
+    @Published var isAutoProgressEnabled: Bool = false
+    @Published var isTuningSuccessful: Bool = false
+    @Published var inTuneDuration: Double = 0.0
+    @Published private(set) var completedNoteIDs = Set<UUID>()
     
-    private var conductor = TunerConductor()
+    // Manual mode output (free-pitch based).
+    @Published var detectedNote: DetectedNote?
+    @Published var manualCentsDistance: Float = 0.0
+    @Published var activeMode: TunerMode = .auto
+
+    // Backward-compatible binding used by the legacy TunerView branch.
+    var centsDistance: Float {
+        get { activeMode == .manual ? manualCentsDistance : autoCentsDistance }
+        set {
+            autoCentsDistance = newValue
+            manualCentsDistance = newValue
+        }
+    }
+    
+    private let conductor = TunerConductor()
     private var cancellables = Set<AnyCancellable>()
     
+    // Keep tuning math centralized and explicit.
+    private let referenceA4: Float = 440.0
+    private let pitchSmoothingFactor: Float = 0.2
+    private let centsSmoothingFactor: Float = 0.2
+    private let inTuneEnterWindowCents: Float = 7.0
+    private let inTuneExitWindowCents: Float = 11.0
+    private let successThreshold: Double = 2.5
+    private let signalHoldDuration: TimeInterval = 1.0
+    private let successLatchDuration: TimeInterval = 1.0
+    
+    private var smoothedPitch: Float = 0.0
+    private var lastProcessFrameAt: Date?
+    private var lastLiveSignalAt: Date?
+    private var successLatchedUntil: Date?
+    private var tuneProgressSeconds: Double = 0.0
+    private var recentTargetCentsSamples: [Float] = []
+    private var isAutoProgressPending = false
+    private var manualStableMIDI: Int?
+    private var manualCandidateMIDI: Int?
+    private var manualCandidateStreak = 0
+    private let manualSwitchRequiredFrames = 4
+    
     init(instrument: Instrument = InstrumentCatalog.guitar6) {
-            self.currentInstrument = instrument
-            self.currentTuning = instrument.defaultTuning
-            
-            // Low E String chosen at the start
-            self.targetNote = instrument.defaultTuning.notes.first
-            self.isManualMode = true
-            
-            conductor.$data
-                .receive(on: RunLoop.main)
-                .sink { [weak self] data in
-                    self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
-                }
-                .store(in: &cancellables)
-        }
+        self.currentInstrument = instrument
+        self.currentTuning = instrument.defaultTuning
+        self.targetNote = instrument.defaultTuning.notes.first
+        
+        conductor.$data
+            .receive(on: RunLoop.main)
+            .sink { [weak self] data in
+                self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
+            }
+            .store(in: &cancellables)
+        
+        applyTrackingTargetToConductor()
+    }
     
     func start() {
         conductor.start()
@@ -42,90 +96,345 @@ class TunerViewModel: ObservableObject {
     }
     
     func setTargetNote(_ note: Note?) {
-        self.targetNote = note
-        self.isManualMode = note != nil
+        let previousTargetID = targetNote?.id
+        
+        if let incomingNote = note,
+           incomingNote.id != previousTargetID,
+           completedNoteIDs.contains(incomingNote.id) {
+            // Re-entering a completed string intentionally starts a new tuning pass.
+            completedNoteIDs.remove(incomingNote.id)
+        }
+        
+        targetNote = note
+        isTargetSignalDetected = false
+        recentTargetCentsSamples.removeAll()
+        applyTrackingTargetToConductor()
+        resetAutoSuccessState()
     }
     
-    // Calculate difference between detected frequency and target frequency
+    func setInstrumentAndTuning(instrument: Instrument, tuning: Tuning) {
+        currentInstrument = instrument
+        currentTuning = tuning
+        completedNoteIDs.removeAll()
+        setTargetNote(tuning.notes.first)
+    }
+    
+    func setActiveMode(_ mode: TunerMode) {
+        activeMode = mode
+        isTargetSignalDetected = false
+        applyTrackingTargetToConductor()
+    }
+    
+    var isWithinTuneWindow: Bool {
+        abs(autoCentsDistance) <= inTuneEnterWindowCents
+    }
+    
+    var tuneProgressRatio: Double {
+        guard successThreshold > 0 else { return 0 }
+        return min(1.0, max(0.0, inTuneDuration / successThreshold))
+    }
+    
+    func isNoteCompleted(_ note: Note) -> Bool {
+        completedNoteIDs.contains(note.id)
+    }
+    
+    // Converts the current frequency to nearest chromatic note using A4=440Hz equal temperament.
+    private func detectNearestNote(for frequency: Float) -> DetectedNote {
+        let midi = 69.0 + 12.0 * log2(Double(frequency / referenceA4))
+        let nearestMIDI = Int(midi.rounded())
+        let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        let noteIndex = ((nearestMIDI % 12) + 12) % 12
+        let octave = (nearestMIDI / 12) - 1
+        
+        let nearestFrequency = referenceA4 * pow(2.0, Float(nearestMIDI - 69) / 12.0)
+        let cents = wrappedCents(1200.0 * log2(frequency / nearestFrequency))
+        
+        return DetectedNote(
+            name: noteNames[noteIndex],
+            octave: octave,
+            midiNumber: nearestMIDI,
+            nearestFrequency: nearestFrequency,
+            centsFromEqualTempered: cents
+        )
+    }
+    
+    // Keeps updates stable enough for real-time UI without creating large lag.
+    private func smooth(previous: Float, current: Float, factor: Float) -> Float {
+        (previous * (1.0 - factor)) + (current * factor)
+    }
+    
     private func processAudioData(pitch: Float, amplitude: Float) {
-            self.currentPitch = pitch
-            self.currentAmplitude = amplitude
-            
-            // Ses yoksa veya hedef nota seçili değilse işlem yapma
-            guard pitch > 0, let target = targetNote else { return }
-            
-            // Sadece seçili olan hedef notanın frekansına göre cent farkını hesapla
-            let targetFrequency = Float(target.frequency)
-            let cents = 1200 * log2(pitch / targetFrequency)
-            
-            // UI titremesini önlemek için yumuşatma (Smoothing)
-            let smoothingFactor: Float = 0.2
-            self.centsDistance = (self.centsDistance * (1.0 - smoothingFactor)) + (cents * smoothingFactor)
-            
-            handleSuccessTracking()
-        }
-    
-    @Published var isAutoProgressEnabled: Bool = false
-    @Published var inTuneDuration: Double = 0.0 // Duration student is perfectly in tune
-    @Published var isTuningSuccessful: Bool = false // Becomes true when inTuneDuration > threshold
-    
-    private var inTuneStartTime: Date?
-    private let successThreshold: Double = 2.0 // Seconds
-    
-    // Finds the closest note to the given frequency among tuning notes
-    private func findClosestNote(to frequency: Float, in notes: [Note]) -> Note {
-        var closestNote = notes[0]
-        var minDifference = abs(frequency - Float(notes[0].frequency))
-        
-        for note in notes {
-            let diff = abs(frequency - Float(note.frequency))
-            if diff < minDifference {
-                closestNote = note
-                minDifference = diff
-            }
-        }
-        
-        return closestNote
+        processAudioData(pitch: pitch, amplitude: amplitude, now: Date())
     }
     
-    private func handleSuccessTracking() {
-        if abs(self.centsDistance) < 5.0 {
-            if inTuneStartTime == nil {
-                inTuneStartTime = Date()
-            } else if let startTime = inTuneStartTime {
-                inTuneDuration = Date().timeIntervalSince(startTime)
-                if inTuneDuration >= successThreshold && !isTuningSuccessful {
+    private func processAudioData(pitch: Float, amplitude: Float, now: Date) {
+        currentPitch = pitch
+        currentAmplitude = amplitude
+        
+        let frameDelta = max(0.0, min(0.2, now.timeIntervalSince(lastProcessFrameAt ?? now)))
+        lastProcessFrameAt = now
+        
+        guard pitch > 0, amplitude > 0 else {
+            let isWithinHoldWindow: Bool
+            if let lastLiveSignalAt {
+                isWithinHoldWindow = now.timeIntervalSince(lastLiveSignalAt) <= signalHoldDuration
+            } else {
+                isWithinHoldWindow = false
+            }
+            
+            isSignalDetected = isWithinHoldWindow
+            if activeMode == .auto {
+                isTargetSignalDetected = isWithinHoldWindow && (currentTargetIsCompleted || !recentTargetCentsSamples.isEmpty)
+            } else {
+                isTargetSignalDetected = false
+            }
+            
+            // Keep the last useful reading for a short period instead of snapping to center.
+        if !isWithinHoldWindow {
+                if currentTargetIsCompleted {
                     isTuningSuccessful = true
-                    HapticManager.shared.playSuccessHaptic()
-                    
-                    if isAutoProgressEnabled {
-                        progressToNextString()
-                    }
+                    tuneProgressSeconds = successThreshold
+                    inTuneDuration = tuneProgressSeconds
+                } else {
+                    tuneProgressSeconds = max(0.0, tuneProgressSeconds - (frameDelta * 0.9))
+                    inTuneDuration = tuneProgressSeconds
+                    refreshSuccessLatch(now: now)
                 }
             }
+            
+            return
+        }
+        
+        isSignalDetected = true
+        hasPitchReference = true
+        lastLiveSignalAt = now
+        smoothedPitch = smoothedPitch == 0 ? pitch : smooth(previous: smoothedPitch, current: pitch, factor: pitchSmoothingFactor)
+        
+        let nearestNote = detectNearestNote(for: smoothedPitch)
+        let stabilizedNote = stabilizeManualDetectedNote(with: nearestNote, frequency: smoothedPitch)
+        detectedNote = stabilizedNote
+        manualCentsDistance = smooth(
+            previous: manualCentsDistance,
+            current: max(-50.0, min(50.0, stabilizedNote.centsFromEqualTempered)),
+            factor: centsSmoothingFactor
+        )
+        
+        guard activeMode == .auto, let target = targetNote else {
+            isTargetSignalDetected = false
+            return
+        }
+        let targetFrequency = Float(target.frequency)
+        let targetCents = 1200.0 * log2(smoothedPitch / targetFrequency)
+        
+        guard abs(targetCents) <= 360 else {
+            isTargetSignalDetected = false
+            if !currentTargetIsCompleted {
+                tuneProgressSeconds = max(0.0, tuneProgressSeconds - (frameDelta * 1.1))
+                inTuneDuration = tuneProgressSeconds
+                refreshSuccessLatch(now: now)
+            }
+            return
+        }
+        
+        isTargetSignalDetected = true
+        let normalizedPitch = smoothedPitch
+        
+        // Stabilizes the meter by rejecting fast harmonic spikes and using a median center.
+        recentTargetCentsSamples.append(targetCents)
+        if recentTargetCentsSamples.count > 5 {
+            recentTargetCentsSamples.removeFirst(recentTargetCentsSamples.count - 5)
+        }
+        let medianTargetCents = median(of: recentTargetCentsSamples) ?? targetCents
+        let targetDelta = abs(medianTargetCents - autoCentsDistance)
+        let adaptiveFactor: Float = targetDelta > 110 ? 0.08 : centsSmoothingFactor
+        let smoothedTargetCents = smooth(previous: autoCentsDistance, current: medianTargetCents, factor: adaptiveFactor)
+        
+        // Limits unrealistically fast meter jumps caused by harmonics/noise spikes.
+        let dynamicRateLimit: Float = abs(autoCentsDistance) > 90 ? 180 : 120
+        let maxStep = Float(frameDelta) * dynamicRateLimit
+        let delta = smoothedTargetCents - autoCentsDistance
+        let limitedDelta = max(-maxStep, min(maxStep, delta))
+        autoCentsDistance += limitedDelta
+        
+        handleAutoSuccessIfNeeded(referencePitch: normalizedPitch, now: now, frameDelta: frameDelta)
+    }
+    
+    private func handleAutoSuccessIfNeeded(referencePitch: Float, now: Date, frameDelta: TimeInterval) {
+        if currentTargetIsCompleted {
+            isTuningSuccessful = true
+            tuneProgressSeconds = successThreshold
+            inTuneDuration = tuneProgressSeconds
+            return
+        }
+        
+        let absoluteCents = abs(autoCentsDistance)
+        let stableWindow = isTuningSuccessful ? inTuneExitWindowCents : inTuneEnterWindowCents
+        
+        if absoluteCents <= inTuneEnterWindowCents {
+            tuneProgressSeconds = min(successThreshold, tuneProgressSeconds + frameDelta)
+        } else if absoluteCents <= stableWindow {
+            tuneProgressSeconds = max(0.0, tuneProgressSeconds - (frameDelta * 0.25))
         } else {
-            // Reset if out of tune
-            inTuneStartTime = nil
-            inTuneDuration = 0.0
-            isTuningSuccessful = false
+            tuneProgressSeconds = max(0.0, tuneProgressSeconds - (frameDelta * 1.5))
+        }
+        
+        inTuneDuration = tuneProgressSeconds
+        
+        if tuneProgressSeconds < successThreshold {
+            refreshSuccessLatch(now: now)
+            return
+        }
+        
+        if !isTuningSuccessful {
+            isTuningSuccessful = true
+            successLatchedUntil = now.addingTimeInterval(successLatchDuration)
+            if let targetNote {
+                completedNoteIDs.insert(targetNote.id)
+            }
+            HapticManager.shared.playSuccessHaptic()
+        }
+        
+        guard isAutoProgressEnabled, !isAutoProgressPending else { return }
+        progressToNextString(referencePitch: referencePitch)
+    }
+    
+    private func progressToNextString(referencePitch: Float) {
+        guard let currentTarget = targetNote else { return }
+        
+        completedNoteIDs.insert(currentTarget.id)
+        let untuned = currentTuning.notes.filter { !completedNoteIDs.contains($0.id) }
+        
+        let candidateNotes = untuned.isEmpty ? currentTuning.notes : untuned
+        if untuned.isEmpty {
+            completedNoteIDs.removeAll()
+        }
+        
+        // Picks the next target by nearest frequency to the currently played pitch.
+        let nextNote = candidateNotes.min { lhs, rhs in
+            abs(Float(lhs.frequency) - referencePitch) < abs(Float(rhs.frequency) - referencePitch)
+        }
+        
+        guard let resolvedNextNote = nextNote else { return }
+        isAutoProgressPending = true
+        
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { [weak self] in
+            guard let self else { return }
+            self.setTargetNote(resolvedNextNote)
+            self.isAutoProgressPending = false
         }
     }
     
-    private func progressToNextString() {
-        guard let currentTarget = targetNote,
-              let currentIndex = currentTuning.notes.firstIndex(of: currentTarget) else { return }
+    private func resetAutoSuccessState() {
+        tuneProgressSeconds = 0.0
+        inTuneDuration = tuneProgressSeconds
+        isTuningSuccessful = false
+        successLatchedUntil = nil
+        recentTargetCentsSamples.removeAll()
+    }
+    
+    private func refreshSuccessLatch(now: Date) {
+        guard let successLatchedUntil else {
+            isTuningSuccessful = false
+            return
+        }
         
-        // Find next string (loop back or stop, we will loop for now)
-        let nextIndex = (currentIndex + 1) % currentTuning.notes.count
+        isTuningSuccessful = now <= successLatchedUntil
+        if now > successLatchedUntil {
+            self.successLatchedUntil = nil
+        }
+    }
+    
+    private var currentTargetIsCompleted: Bool {
+        guard let targetNote else { return false }
+        return completedNoteIDs.contains(targetNote.id)
+    }
+    
+    // Prevents one-frame note flips in manual mode by requiring short consistency before switching labels.
+    private func stabilizeManualDetectedNote(with raw: DetectedNote, frequency: Float) -> DetectedNote {
+        if manualStableMIDI == nil {
+            manualStableMIDI = raw.midiNumber
+            manualCandidateMIDI = nil
+            manualCandidateStreak = 0
+            return raw
+        }
         
-        // Small delay to let user see success before jumping
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-            guard let self = self else { return }
-            self.setTargetNote(self.currentTuning.notes[nextIndex])
-            // Force manual mode on to keep the specific target active
-            self.isManualMode = true
+        guard let stableMIDI = manualStableMIDI else { return raw }
+        
+        if abs(raw.midiNumber - stableMIDI).isMultiple(of: 12),
+           abs(raw.centsFromEqualTempered) < 20.0 {
+            manualCandidateMIDI = nil
+            manualCandidateStreak = 0
+            return noteFromMIDI(stableMIDI, frequency: frequency)
+        }
+        
+        if raw.midiNumber == stableMIDI {
+            manualCandidateMIDI = nil
+            manualCandidateStreak = 0
+            return noteFromMIDI(stableMIDI, frequency: frequency)
+        }
+        
+        if manualCandidateMIDI == raw.midiNumber {
+            manualCandidateStreak += 1
+        } else {
+            manualCandidateMIDI = raw.midiNumber
+            manualCandidateStreak = 1
+        }
+        
+        if manualCandidateStreak >= manualSwitchRequiredFrames {
+            manualStableMIDI = raw.midiNumber
+            manualCandidateMIDI = nil
+            manualCandidateStreak = 0
+            return noteFromMIDI(raw.midiNumber, frequency: frequency)
+        }
+        
+        return noteFromMIDI(stableMIDI, frequency: frequency)
+    }
+    
+    private func noteFromMIDI(_ midi: Int, frequency: Float) -> DetectedNote {
+        let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
+        let noteIndex = ((midi % 12) + 12) % 12
+        let octave = (midi / 12) - 1
+        let nearestFrequency = referenceA4 * pow(2.0, Float(midi - 69) / 12.0)
+        let cents = wrappedCents(1200.0 * log2(frequency / nearestFrequency))
+        
+        return DetectedNote(
+            name: noteNames[noteIndex],
+            octave: octave,
+            midiNumber: midi,
+            nearestFrequency: nearestFrequency,
+            centsFromEqualTempered: cents
+        )
+    }
+    
+    private func applyTrackingTargetToConductor() {
+        guard activeMode == .auto, let targetNote else {
+            conductor.setTrackingTargetFrequency(nil)
+            return
+        }
+        
+        conductor.setTrackingTargetFrequency(Float(targetNote.frequency))
+    }
+    
+    private func wrappedCents(_ cents: Float) -> Float {
+        cents - (1200.0 * round(cents / 1200.0))
+    }
+    
+#if DEBUG
+    // Debug-only entry point to feed deterministic synthetic frames.
+    func debugInjectFrame(pitch: Float, amplitude: Float, timestamp: Date) {
+        processAudioData(pitch: pitch, amplitude: amplitude, now: timestamp)
+    }
+#endif
+    
+    private func median(of values: [Float]) -> Float? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        
+        if sorted.count.isMultiple(of: 2) {
+            return (sorted[middle - 1] + sorted[middle]) / 2
+        } else {
+            return sorted[middle]
         }
     }
 }
-
-
