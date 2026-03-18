@@ -1,33 +1,41 @@
 import SwiftUI
 
 struct TunerView: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     @StateObject private var viewModel = TunerViewModel()
     @StateObject private var permissionManager = PermissionManager()
-    
+
     @State private var showSettings = false
     @State private var showTuningPicker = false
     @State private var showPermissionAlert = false
     @State private var selectedMode: TunerMode = .auto
-    
+
     var body: some View {
-        TabView(selection: $selectedMode) {
-            autoModeView
-                .tabItem {
-                    Label("Auto", systemImage: "guitars")
-                }
-                .tag(TunerMode.auto)
-                .onAppear {
-                    if viewModel.targetNote == nil {
-                        viewModel.setTargetNote(viewModel.currentTuning.notes.first)
+        ZStack {
+            AppTheme.backgroundTop
+                .ignoresSafeArea()
+
+            TabView(selection: $selectedMode) {
+                autoModeView
+                    .tabItem {
+                        Label("Auto", systemImage: "guitars")
                     }
-                }
-            
-            manualModeView
-                .tabItem {
-                    Label("Manual", systemImage: "hand.tap")
-                }
-                .tag(TunerMode.manual)
+                    .tag(TunerMode.auto)
+                    .onAppear {
+                        if viewModel.targetNote == nil {
+                            viewModel.setTargetNote(viewModel.currentTuning.notes.first)
+                        }
+                    }
+
+                manualModeView
+                    .tabItem {
+                        Label("Manual", systemImage: "waveform.path")
+                    }
+                    .tag(TunerMode.manual)
+            }
         }
+        .tint(AppTheme.accent)
         .onAppear {
             viewModel.setActiveMode(selectedMode)
             permissionManager.requestMicrophonePermission { granted in
@@ -56,260 +64,395 @@ struct TunerView: View {
             Text("DeepTune needs microphone access to detect pitch. Please enable it in Settings.")
         }
     }
-    
-    // Keeps Auto mode focused on target-string tuning and progression.
+
     private var autoModeView: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            
-            VStack(spacing: 14) {
-                headerView
-                
-                autoPanel
-                
-                Spacer(minLength: 0)
+        GeometryReader { _ in
+            ZStack {
+                AppTheme.backgroundTop
+                    .ignoresSafeArea()
+
+                VStack(spacing: 8) {
+                    headerView
+                        .frame(height: 88)
+
+                    VStack(spacing: 6) {
+                        AutoStrobeArea(
+                            centsDistance: viewModel.autoCentsDistance,
+                            targetNote: viewModel.targetNote,
+                            isTuningSuccessful: viewModel.isTuningSuccessful,
+                            isSignalDetected: viewModel.isTargetSignalDetected,
+                            hasPitchReference: viewModel.hasPitchReference
+                        )
+
+                    HStack {
+                        Text(String(format: "%.1f cents", viewModel.autoCentsDistance))
+                            .font(.headline.weight(.semibold))
+                            .foregroundColor(autoFeedbackColor)
+
+                        Spacer()
+
+                        Text("Progress")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(AppTheme.textSecondary)
+                    }
+                    .padding(.top, 2)
+
+                    autoProgressBar
+                        .opacity(viewModel.isTargetSignalDetected || viewModel.tuneProgressRatio > 0 ? 1.0 : 0.45)
+
+                        ZStack(alignment: .bottomTrailing) {
+                            headstockView
+                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                            floatingAutoProgressControl
+                                .padding(.trailing, 6)
+                                .padding(.bottom, 48)
+                                .zIndex(1)
+                        }
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    }
+                    .padding(.horizontal, 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+                    Spacer(minLength: 0)
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 92)
             }
         }
     }
-    
-    // Keeps Manual mode independent from selected string and target note.
+
+    private var autoFeedbackColor: Color {
+        AppTheme.autoStrobeRampColor(
+            centsDistance: viewModel.autoCentsDistance,
+            isSignalDetected: viewModel.isTargetSignalDetected,
+            visualRangeCents: 50.0
+        )
+    }
+
+    private var autoProgressBar: some View {
+        GeometryReader { proxy in
+            let ratio = max(0.0, min(1.0, viewModel.tuneProgressRatio))
+            let fillWidth = max(6.0, proxy.size.width * ratio)
+
+            ZStack(alignment: .leading) {
+                Capsule()
+                    .fill(AppTheme.stroke.opacity(0.35))
+                Capsule()
+                    .fill(autoFeedbackColor)
+                    .frame(width: fillWidth)
+            }
+        }
+        .frame(height: 9)
+    }
+
     private var manualModeView: some View {
         ZStack {
-            Color.black.ignoresSafeArea()
-            
-            VStack(spacing: 18) {
-                headerView
-                
-                ManualStrobeArea(
-                    centsDistance: viewModel.manualCentsDistance,
-                    detectedNote: viewModel.detectedNote,
-                    isSignalDetected: viewModel.isSignalDetected
-                )
-                .padding(.horizontal, 20)
-                
-                RoundedRectangle(cornerRadius: 30, style: .continuous)
-                    .fill(Color.white)
-                    .overlay(manualInfoPanel.padding(.top, 26))
-                    .padding(.horizontal, 20)
-                    .padding(.bottom, 8)
-                
-                Spacer(minLength: 0)
-            }
-        }
-    }
-    
-    private var autoPanel: some View {
-        ZStack(alignment: .topTrailing) {
-            RoundedRectangle(cornerRadius: 30, style: .continuous)
-                .fill(Color.white)
-                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
-            
-            VStack(spacing: 18) {
-                AutoStrobeArea(
-                    centsDistance: viewModel.autoCentsDistance,
-                    targetNote: viewModel.targetNote,
-                    isTuningSuccessful: viewModel.isTuningSuccessful,
-                    isSignalDetected: viewModel.isTargetSignalDetected,
-                    hasPitchReference: viewModel.hasPitchReference,
-                    tuneProgressRatio: viewModel.tuneProgressRatio
-                )
-                .padding(.horizontal, 16)
-                .padding(.top, 20)
-                
-                headstockView
-                    .padding(.bottom, 20)
-            }
-            
-            Button(action: { viewModel.isAutoProgressEnabled.toggle() }) {
-                HStack(spacing: 8) {
-                    Text("Auto")
-                        .font(.subheadline.weight(.bold))
-                    Image(systemName: viewModel.isAutoProgressEnabled ? "checkmark.circle.fill" : "circle")
+            AppTheme.backgroundTop
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 8) {
+                    headerView
+                        .frame(height: 88)
+
+                    ManualStrobeArea(
+                        centsDistance: viewModel.manualCentsDistance,
+                        detectedNote: viewModel.detectedNote,
+                        isSignalDetected: viewModel.isSignalDetected
+                    )
+                    .padding(16)
+                    .appCard()
+
+                    manualInfoPanel
+                        .padding(16)
+                        .appCard()
                 }
-                .foregroundColor(viewModel.isAutoProgressEnabled ? .green : .gray)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(Color.black.opacity(0.08))
-                .cornerRadius(12)
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 104)
             }
-            .padding(.top, 18)
-            .padding(.trailing, 14)
         }
-        .frame(maxWidth: .infinity, minHeight: 540, maxHeight: 600)
-        .padding(.horizontal, 20)
     }
-    
+
+    private var floatingAutoProgressControl: some View {
+        HStack(spacing: 8) {
+            Text("Auto")
+                .font(.caption.weight(.bold))
+                .foregroundColor(AppTheme.textPrimary)
+            Toggle("", isOn: $viewModel.isAutoProgressEnabled)
+                .labelsHidden()
+                .tint(AppTheme.accent)
+                .scaleEffect(0.84)
+            Text(viewModel.isAutoProgressEnabled ? "On" : "Off")
+                .font(.caption.weight(.bold))
+                .foregroundColor(viewModel.isAutoProgressEnabled ? AppTheme.success : AppTheme.textTertiary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(
+            Capsule()
+                .fill(AppTheme.surfaceSecondary.opacity(0.85))
+                .overlay(Capsule().stroke(AppTheme.stroke.opacity(0.8), lineWidth: 1))
+        )
+    }
+
     private var manualInfoPanel: some View {
         VStack(spacing: 14) {
             HStack(alignment: .lastTextBaseline, spacing: 6) {
                 Text(viewModel.detectedNote?.name ?? "--")
-                    .font(.system(size: 88, weight: .heavy, design: .rounded))
-                    .foregroundColor(viewModel.isSignalDetected ? .black : .gray)
-                
+                    .font(.system(size: 84, weight: .heavy, design: .rounded))
+                    .foregroundColor(viewModel.isSignalDetected ? AppTheme.textPrimary : AppTheme.textTertiary)
+
                 Text(viewModel.detectedNote.map { "\($0.octave)" } ?? "")
-                    .font(.title2.weight(.bold))
-                    .foregroundColor(.gray)
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(AppTheme.textSecondary)
             }
-            
+
             Text(
                 viewModel.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
-                ?? "Play a note to detect frequency"
+                    ?? "Play a note to detect frequency"
             )
             .font(.subheadline.weight(.medium))
-            .foregroundColor(.gray)
-            
-            Text("Manual mode tracks the note you play, not the selected string.")
-                .font(.body)
-                .multilineTextAlignment(.center)
-                .foregroundColor(.gray)
-                .padding(.horizontal, 24)
-            
-            Spacer(minLength: 0)
-        }
-    }
-    
-    private var headerView: some View {
-        HStack {
-            Button(action: { showTuningPicker.toggle() }) {
-                Text("\(viewModel.currentInstrument.name) - \(viewModel.currentTuning.name)")
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .padding()
-                    .background(
-                        RoundedRectangle(cornerRadius: 14)
-                            .fill(Color.white.opacity(0.1))
-                    )
-            }
-            
-            Spacer()
-            
-            Button(action: {
-                if !permissionManager.isMicrophoneGranted {
-                    showPermissionAlert = true
-                }
-            }) {
-                Image(systemName: permissionManager.isMicrophoneGranted ? "mic.fill" : "mic.slash.fill")
-                    .font(.title2)
-                    .foregroundColor(permissionManager.isMicrophoneGranted ? .green : .red)
-            }
-            .padding(.trailing, 8)
-            
-            Button(action: { showSettings.toggle() }) {
-                Image(systemName: "gearshape")
-                    .font(.title2)
-                    .foregroundColor(.white)
-            }
-        }
-        .padding(.horizontal, 20)
-        .padding(.top, 6)
-    }
-    
-    // Mirrors a realistic 6-string headstock peg layout and keeps direct string selection fast.
-    private var headstockView: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 15)
-                .fill(Color.black.opacity(0.05))
-                .frame(width: 140, height: 280)
-                .overlay(
-                    Text("Headstock\nImage\nArea")
-                        .foregroundColor(.gray)
-                        .multilineTextAlignment(.center)
+            .foregroundColor(AppTheme.textSecondary)
+
+            HStack(spacing: 10) {
+                manualRangeCard(
+                    title: "Lowest",
+                    value: viewModel.manualLowestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
                 )
-            
-            let notes = viewModel.currentTuning.notes
-            
-            if notes.count == 6 {
-                HStack(spacing: 70) {
-                    VStack(spacing: 30) {
-                        PegButton(
-                            note: notes[0],
-                            isActive: viewModel.targetNote == notes[0],
-                            isCompleted: viewModel.isNoteCompleted(notes[0]),
-                            isDarkTheme: false
+                manualRangeCard(
+                    title: "Highest",
+                    value: viewModel.manualHighestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
+                )
+            }
+
+            Text("Manual mode follows the note you play instead of the selected tuning string.")
+                .font(.footnote)
+                .multilineTextAlignment(.center)
+                .foregroundColor(AppTheme.textSecondary)
+                .padding(.horizontal, 8)
+        }
+    }
+
+    private func manualRangeCard(title: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption2.weight(.semibold))
+                .foregroundColor(AppTheme.textTertiary)
+            Text(value)
+                .font(.caption.weight(.semibold))
+                .foregroundColor(AppTheme.textPrimary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(AppTheme.surfaceSecondary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(AppTheme.stroke.opacity(0.7), lineWidth: 1)
+                )
+        )
+    }
+
+    private var headerView: some View {
+        ZStack {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    compactSelector(
+                        icon: "guitars.fill",
+                        title: viewModel.currentInstrument.name,
+                        isInteractive: false
+                    )
+
+                    Button(action: { showTuningPicker.toggle() }) {
+                        compactSelector(
+                            icon: "dial.medium.fill",
+                            title: viewModel.currentTuning.name,
+                            isInteractive: true
                         )
-                            .onTapGesture { viewModel.setTargetNote(notes[0]) }
-                        PegButton(
-                            note: notes[1],
-                            isActive: viewModel.targetNote == notes[1],
-                            isCompleted: viewModel.isNoteCompleted(notes[1]),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(notes[1]) }
-                        PegButton(
-                            note: notes[2],
-                            isActive: viewModel.targetNote == notes[2],
-                            isCompleted: viewModel.isNoteCompleted(notes[2]),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(notes[2]) }
                     }
-                    
-                    VStack(spacing: 30) {
-                        PegButton(
-                            note: notes[3],
-                            isActive: viewModel.targetNote == notes[3],
-                            isCompleted: viewModel.isNoteCompleted(notes[3]),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(notes[3]) }
-                        PegButton(
-                            note: notes[4],
-                            isActive: viewModel.targetNote == notes[4],
-                            isCompleted: viewModel.isNoteCompleted(notes[4]),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(notes[4]) }
-                        PegButton(
-                            note: notes[5],
-                            isActive: viewModel.targetNote == notes[5],
-                            isCompleted: viewModel.isNoteCompleted(notes[5]),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(notes[5]) }
-                    }
+                    .buttonStyle(.plain)
                 }
-            } else {
-                HStack {
-                    ForEach(notes) { note in
-                        PegButton(
-                            note: note,
-                            isActive: viewModel.targetNote == note,
-                            isCompleted: viewModel.isNoteCompleted(note),
-                            isDarkTheme: false
-                        )
-                            .onTapGesture { viewModel.setTargetNote(note) }
+
+                Spacer()
+
+                HStack(spacing: 8) {
+                    Button(action: {
+                        if !permissionManager.isMicrophoneGranted {
+                            showPermissionAlert = true
+                        }
+                    }) {
+                        Image(systemName: permissionManager.isMicrophoneGranted ? "mic.fill" : "mic.slash.fill")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(permissionManager.isMicrophoneGranted ? AppTheme.success : AppTheme.danger)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Circle()
+                                    .fill(AppTheme.surfaceSecondary)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(AppTheme.stroke.opacity(colorScheme == .dark ? 0.95 : 0.85), lineWidth: 1)
+                                    )
+                                    .shadow(color: (colorScheme == .dark ? AppTheme.accent.opacity(0.26) : Color.black.opacity(0.12)), radius: 5, x: 0, y: 2)
+                            )
+                    }
+
+                    Button(action: { showSettings.toggle() }) {
+                        Image(systemName: "gearshape")
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundColor(AppTheme.textPrimary)
+                            .frame(width: 34, height: 34)
+                            .background(
+                                Circle()
+                                    .fill(AppTheme.surfaceSecondary)
+                                    .overlay(
+                                        Circle()
+                                            .stroke(AppTheme.stroke.opacity(colorScheme == .dark ? 0.95 : 0.85), lineWidth: 1)
+                                    )
+                                    .shadow(color: (colorScheme == .dark ? AppTheme.accent.opacity(0.26) : Color.black.opacity(0.12)), radius: 5, x: 0, y: 2)
+                            )
                     }
                 }
             }
+
+            VStack(spacing: 1) {
+                Text("DeepTune")
+                    .font(.title3.weight(.bold))
+                    .foregroundColor(AppTheme.textPrimary)
+            }
+            .padding(.horizontal, 120)
         }
-        .frame(height: 300)
+    }
+
+    private func compactSelector(icon: String, title: String, isInteractive: Bool) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(AppTheme.accent)
+                .frame(width: 18, height: 18)
+                .background(Circle().fill(AppTheme.accentSoft))
+
+            Text(title)
+                .font(.footnote.weight(.semibold))
+                .foregroundColor(AppTheme.textPrimary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+
+            if isInteractive {
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.semibold))
+                    .foregroundColor(AppTheme.textTertiary)
+            }
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .fill(AppTheme.surfacePrimary)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                        .stroke(AppTheme.stroke.opacity(colorScheme == .dark ? 0.95 : 0.85), lineWidth: 1)
+                )
+                .shadow(color: (colorScheme == .dark ? AppTheme.accent.opacity(0.20) : Color.black.opacity(0.10)), radius: 4, x: 0, y: 2)
+        )
+        .frame(width: 134, alignment: .leading)
+    }
+
+    // Keeps the headstock zone clear and flexible for future image overlays.
+    private var headstockView: some View {
+        GeometryReader { proxy in
+            let columnSpacing = max(70, min(104, proxy.size.width * 0.34))
+            let pegSpacing = max(24, min(44, proxy.size.height * 0.22))
+
+            ZStack(alignment: .bottom) {
+                pegLayout(columnSpacing: columnSpacing, pegSpacing: pegSpacing)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, max(8, proxy.size.height * 0.06))
+
+                VStack(spacing: 4) {
+                    Image(systemName: "photo")
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundColor(AppTheme.textSecondary)
+                    Text("Future guitar headstock artwork area")
+                        .font(.caption2)
+                        .foregroundColor(AppTheme.textSecondary)
+                }
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func pegLayout(columnSpacing: CGFloat, pegSpacing: CGFloat) -> some View {
+        let notes = viewModel.currentTuning.notes
+
+        if notes.count == 6 {
+            HStack(spacing: columnSpacing) {
+                VStack(spacing: pegSpacing) {
+                    peg(for: notes[0])
+                    peg(for: notes[1])
+                    peg(for: notes[2])
+                }
+
+                VStack(spacing: pegSpacing) {
+                    peg(for: notes[3])
+                    peg(for: notes[4])
+                    peg(for: notes[5])
+                }
+            }
+        } else {
+            HStack(spacing: 10) {
+                ForEach(notes) { note in
+                    peg(for: note)
+                }
+            }
+        }
+    }
+
+    private func peg(for note: Note) -> some View {
+        PegButton(
+            note: note,
+            isActive: viewModel.targetNote == note,
+            isCompleted: viewModel.isNoteCompleted(note)
+        )
+        .onTapGesture {
+            viewModel.setTargetNote(note)
+        }
     }
 }
 
 struct PegButton: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     var note: Note
     var isActive: Bool
     var isCompleted: Bool = false
-    var isDarkTheme: Bool = true
-    
+
     var body: some View {
         Text(note.name)
-            .font(.headline)
-            .bold()
-            .frame(width: 45, height: 45)
+            .font(.headline.weight(.bold))
+            .frame(width: 48, height: 48)
             .background(
                 Circle()
-                    .fill(isActive ? Color.green : (isDarkTheme ? Color.white.opacity(0.1) : Color.black.opacity(0.1)))
-                    .shadow(color: isActive ? .green.opacity(0.5) : .clear, radius: 5)
+                    .fill(isActive ? AppTheme.accent : AppTheme.surfaceElevated)
+                    .overlay(
+                        Circle()
+                            .stroke(AppTheme.stroke.opacity(isActive ? (colorScheme == .dark ? 0.40 : 0.40) : (colorScheme == .dark ? 0.85 : 0.85)), lineWidth: 1)
+                    )
+                    .shadow(color: (colorScheme == .dark ? AppTheme.accent.opacity(isActive ? 0.32 : 0.18) : Color.black.opacity(isActive ? 0.20 : 0.08)), radius: isActive ? 8 : 5, x: 0, y: 3)
             )
-            .foregroundColor(isActive ? .white : (isDarkTheme ? .white : .black))
-            .animation(.spring(), value: isActive)
+            .foregroundColor(isActive ? .white : AppTheme.textPrimary)
+            .animation(.spring(response: 0.24, dampingFraction: 0.84), value: isActive)
             .overlay(alignment: .topTrailing) {
                 if isCompleted {
                     Image(systemName: "checkmark.circle.fill")
                         .font(.system(size: 15, weight: .bold))
-                        .foregroundColor(.green)
-                        .background(Circle().fill(Color.white))
+                        .foregroundColor(AppTheme.success)
+                        .background(Circle().fill(AppTheme.surfacePrimary))
                         .offset(x: 4, y: -4)
                 }
             }
@@ -318,4 +461,9 @@ struct PegButton: View {
 
 #Preview {
     TunerView()
+}
+
+#Preview("Dark") {
+    TunerView()
+        .preferredColorScheme(.dark)
 }

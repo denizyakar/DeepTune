@@ -36,6 +36,8 @@ final class TunerViewModel: ObservableObject {
     // Manual mode output (free-pitch based).
     @Published var detectedNote: DetectedNote?
     @Published var manualCentsDistance: Float = 0.0
+    @Published var manualLowestFrequency: Float?
+    @Published var manualHighestFrequency: Float?
     @Published var activeMode: TunerMode = .auto
 
     // Backward-compatible binding used by the legacy TunerView branch.
@@ -122,6 +124,9 @@ final class TunerViewModel: ObservableObject {
     func setActiveMode(_ mode: TunerMode) {
         activeMode = mode
         isTargetSignalDetected = false
+        if mode == .manual {
+            resetManualSessionMetrics()
+        }
         applyTrackingTargetToConductor()
     }
     
@@ -218,6 +223,19 @@ final class TunerViewModel: ObservableObject {
             current: max(-50.0, min(50.0, stabilizedNote.centsFromEqualTempered)),
             factor: centsSmoothingFactor
         )
+        if activeMode == .manual {
+            if let manualLowestFrequency {
+                self.manualLowestFrequency = min(manualLowestFrequency, stabilizedNote.nearestFrequency)
+            } else {
+                manualLowestFrequency = stabilizedNote.nearestFrequency
+            }
+            
+            if let manualHighestFrequency {
+                self.manualHighestFrequency = max(manualHighestFrequency, stabilizedNote.nearestFrequency)
+            } else {
+                manualHighestFrequency = stabilizedNote.nearestFrequency
+            }
+        }
         
         guard activeMode == .auto, let target = targetNote else {
             isTargetSignalDetected = false
@@ -330,6 +348,11 @@ final class TunerViewModel: ObservableObject {
         isTuningSuccessful = false
         successLatchedUntil = nil
         recentTargetCentsSamples.removeAll()
+    }
+
+    private func resetManualSessionMetrics() {
+        manualLowestFrequency = nil
+        manualHighestFrequency = nil
     }
     
     private func refreshSuccessLatch(now: Date) {
