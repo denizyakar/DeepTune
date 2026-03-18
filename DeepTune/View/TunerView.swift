@@ -7,144 +7,37 @@ struct TunerView: View {
     @State private var showSettings = false
     @State private var showTuningPicker = false
     @State private var showPermissionAlert = false
+    @State private var selectedMode: TunerMode = .auto
     
     var body: some View {
-        TabView {
-            // MARK: - Auto Mode Tab (Headstock)
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    headerView
-                    
-                    Spacer()
-                    
-                    // 1. Strobe at the top
-                    // Now includes the note name inside the center line
-                    StrobeTunerArea(
-                        centsDistance: $viewModel.centsDistance,
-                        targetNote: viewModel.targetNote,
-                        isTuningSuccessful: viewModel.isTuningSuccessful
-                    )
-                    
-                    // 2. Main White Box (Headstock)
-                    ZStack(alignment: .top) {
-                        RoundedRectangle(cornerRadius: 30)
-                            .fill(Color.white)
-                            .frame(width: 340, height: 450)
-                            .shadow(radius: 10)
-                        
-                        VStack(spacing: 0) {
-                            
-                            // Top Right: Auto Progression Toggle
-                            HStack {
-                                Spacer()
-                                
-                                Button(action: {
-                                    viewModel.isAutoProgressEnabled.toggle()
-                                }) {
-                                    HStack {
-                                        Text("Auto")
-                                            .font(.subheadline)
-                                            .fontWeight(.bold)
-                                        Image(systemName: viewModel.isAutoProgressEnabled ? "checkmark.circle.fill" : "circle")
-                                    }
-                                    .foregroundColor(viewModel.isAutoProgressEnabled ? .green : .gray)
-                                    .padding(8)
-                                    .background(Color.black.opacity(0.05))
-                                    .cornerRadius(8)
-                                }
-                                .padding(.trailing, 20)
-                                .padding(.top, 20)
-                            }
-                            
-                            Spacer()
-                            
-                            // Headstock Image & Buttons Area
-                            headstockView
-                            
-                            Spacer()
-                        }
-                    }
-                    
-                    Spacer()
+        TabView(selection: $selectedMode) {
+            autoModeView
+                .tabItem {
+                    Label("Auto", systemImage: "guitars")
                 }
-            }
-            .tabItem {
-                            Label("Auto", systemImage: "guitars")
-                        }
-                        .onAppear {
-                            if viewModel.targetNote == nil {
-                                viewModel.setTargetNote(viewModel.currentTuning.notes.first)
-                            }
-                        }
+                .tag(TunerMode.auto)
+                .onAppear {
+                    if viewModel.targetNote == nil {
+                        viewModel.setTargetNote(viewModel.currentTuning.notes.first)
+                    }
+                }
             
-            // MARK: - Manual Mode Tab
-            ZStack {
-                Color.black.ignoresSafeArea()
-                
-                VStack(spacing: 20) {
-                    headerView
-                    
-                    Spacer()
-                    
-                    StrobeTunerArea(
-                        centsDistance: $viewModel.centsDistance,
-                        targetNote: viewModel.targetNote,
-                        isTuningSuccessful: viewModel.isTuningSuccessful
-                    )
-                    
-                    Text(String(format: "%.1f cents", viewModel.centsDistance))
-                        .font(.headline)
-                        .foregroundColor(abs(viewModel.centsDistance) < 5.0 ? .green : .secondary)
-                        .padding(.bottom, 10)
-                    
-                    ZStack(alignment: .top) {
-                        RoundedRectangle(cornerRadius: 30)
-                            .fill(Color.white)
-                            .frame(width: 340, height: 450)
-                            .shadow(radius: 10)
-                        
-                        VStack(spacing: 15) {
-                            HStack(alignment: .lastTextBaseline) {
-                                Text(viewModel.targetNote?.name ?? "--")
-                                    .font(.system(size: 80, weight: .black, design: .rounded))
-                                    .foregroundColor(abs(viewModel.centsDistance) < 5.0 ? .green : .black)
-                                
-                                if let octave = viewModel.targetNote?.octave {
-                                    Text(String(octave))
-                                        .font(.title)
-                                        .foregroundColor(.gray)
-                                }
-                            }
-                            .padding(.top, 20)
-                            
-                            Spacer()
-                            
-                            // Manual Instruction inside the box
-                            Text("Play a string or sing a note.\nThe tuner will focus on the closest pitch.")
-                                .font(.body)
-                                .foregroundColor(.gray)
-                                .multilineTextAlignment(.center)
-                                .padding()
-                            
-                            Spacer()
-                        }
-                    }
-                    
-                    Spacer()
+            manualModeView
+                .tabItem {
+                    Label("Manual", systemImage: "hand.tap")
                 }
-            }
-            .tabItem {
-                Label("Manual", systemImage: "hand.tap")
-            }
+                .tag(TunerMode.manual)
         }
         .onAppear {
+            viewModel.setActiveMode(selectedMode)
             permissionManager.requestMicrophonePermission { granted in
                 if granted {
                     viewModel.start()
                 }
             }
+        }
+        .onChange(of: selectedMode) { _, newMode in
+            viewModel.setActiveMode(newMode)
         }
         .onDisappear {
             viewModel.stop()
@@ -164,7 +57,117 @@ struct TunerView: View {
         }
     }
     
-    // MARK: - Subviews
+    // Keeps Auto mode focused on target-string tuning and progression.
+    private var autoModeView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 14) {
+                headerView
+                
+                autoPanel
+                
+                Spacer(minLength: 0)
+            }
+        }
+    }
+    
+    // Keeps Manual mode independent from selected string and target note.
+    private var manualModeView: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            
+            VStack(spacing: 18) {
+                headerView
+                
+                ManualStrobeArea(
+                    centsDistance: viewModel.manualCentsDistance,
+                    detectedNote: viewModel.detectedNote,
+                    isSignalDetected: viewModel.isSignalDetected
+                )
+                .padding(.horizontal, 20)
+                
+                RoundedRectangle(cornerRadius: 30, style: .continuous)
+                    .fill(Color.white)
+                    .overlay(manualInfoPanel.padding(.top, 26))
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 8)
+                
+                Spacer(minLength: 0)
+            }
+        }
+    }
+    
+    private var autoPanel: some View {
+        ZStack(alignment: .topTrailing) {
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(Color.white)
+                .shadow(color: .black.opacity(0.18), radius: 12, x: 0, y: 4)
+            
+            VStack(spacing: 18) {
+                AutoStrobeArea(
+                    centsDistance: viewModel.autoCentsDistance,
+                    targetNote: viewModel.targetNote,
+                    isTuningSuccessful: viewModel.isTuningSuccessful,
+                    isSignalDetected: viewModel.isTargetSignalDetected,
+                    hasPitchReference: viewModel.hasPitchReference,
+                    tuneProgressRatio: viewModel.tuneProgressRatio
+                )
+                .padding(.horizontal, 16)
+                .padding(.top, 20)
+                
+                headstockView
+                    .padding(.bottom, 20)
+            }
+            
+            Button(action: { viewModel.isAutoProgressEnabled.toggle() }) {
+                HStack(spacing: 8) {
+                    Text("Auto")
+                        .font(.subheadline.weight(.bold))
+                    Image(systemName: viewModel.isAutoProgressEnabled ? "checkmark.circle.fill" : "circle")
+                }
+                .foregroundColor(viewModel.isAutoProgressEnabled ? .green : .gray)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.08))
+                .cornerRadius(12)
+            }
+            .padding(.top, 18)
+            .padding(.trailing, 14)
+        }
+        .frame(maxWidth: .infinity, minHeight: 540, maxHeight: 600)
+        .padding(.horizontal, 20)
+    }
+    
+    private var manualInfoPanel: some View {
+        VStack(spacing: 14) {
+            HStack(alignment: .lastTextBaseline, spacing: 6) {
+                Text(viewModel.detectedNote?.name ?? "--")
+                    .font(.system(size: 88, weight: .heavy, design: .rounded))
+                    .foregroundColor(viewModel.isSignalDetected ? .black : .gray)
+                
+                Text(viewModel.detectedNote.map { "\($0.octave)" } ?? "")
+                    .font(.title2.weight(.bold))
+                    .foregroundColor(.gray)
+            }
+            
+            Text(
+                viewModel.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
+                ?? "Play a note to detect frequency"
+            )
+            .font(.subheadline.weight(.medium))
+            .foregroundColor(.gray)
+            
+            Text("Manual mode tracks the note you play, not the selected string.")
+                .font(.body)
+                .multilineTextAlignment(.center)
+                .foregroundColor(.gray)
+                .padding(.horizontal, 24)
+            
+            Spacer(minLength: 0)
+        }
+    }
+    
     private var headerView: some View {
         HStack {
             Button(action: { showTuningPicker.toggle() }) {
@@ -172,13 +175,18 @@ struct TunerView: View {
                     .font(.headline)
                     .foregroundColor(.white)
                     .padding()
-                    .background(RoundedRectangle(cornerRadius: 10).fill(Color.white.opacity(0.1)))
+                    .background(
+                        RoundedRectangle(cornerRadius: 14)
+                            .fill(Color.white.opacity(0.1))
+                    )
             }
             
             Spacer()
             
             Button(action: {
-                if !permissionManager.isMicrophoneGranted { showPermissionAlert = true }
+                if !permissionManager.isMicrophoneGranted {
+                    showPermissionAlert = true
+                }
             }) {
                 Image(systemName: permissionManager.isMicrophoneGranted ? "mic.fill" : "mic.slash.fill")
                     .font(.title2)
@@ -192,66 +200,97 @@ struct TunerView: View {
                     .foregroundColor(.white)
             }
         }
-        .padding()
+        .padding(.horizontal, 20)
+        .padding(.top, 6)
     }
     
-    // Simulated Headstock layout for Auto Mode (Inside the white box)
-        private var headstockView: some View {
-            ZStack {
-                // Placeholder space for the future guitar headstock image
-                RoundedRectangle(cornerRadius: 15)
-                    .fill(Color.black.opacity(0.05))
-                    .frame(width: 140, height: 280)
-                    .overlay(Text("Headstock\nImage\nArea").foregroundColor(.gray).multilineTextAlignment(.center))
-                
-                let notes = viewModel.currentTuning.notes
-                
-                // Positioning 6 strings (3 left, 3 right)
-                if notes.count == 6 {
-                    HStack(spacing: 70) { // Spread out to fit around the image
-                        // Left Side (Thick strings: 6th, 5th, 4th)
-                        VStack(spacing: 30) {
-                            PegButton(note: notes[0], isActive: viewModel.targetNote == notes[0], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[0]) } // <-- Dokunma eklendi
-                            
-                            PegButton(note: notes[1], isActive: viewModel.targetNote == notes[1], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[1]) } // <-- Dokunma eklendi
-                            
-                            PegButton(note: notes[2], isActive: viewModel.targetNote == notes[2], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[2]) } // <-- Dokunma eklendi
-                        }
-                        
-                        // Right Side (Thin strings: 3rd, 2nd, 1st)
-                        VStack(spacing: 30) {
-                            PegButton(note: notes[3], isActive: viewModel.targetNote == notes[3], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[3]) } // <-- Dokunma eklendi
-                            
-                            PegButton(note: notes[4], isActive: viewModel.targetNote == notes[4], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[4]) } // <-- Dokunma eklendi
-                            
-                            PegButton(note: notes[5], isActive: viewModel.targetNote == notes[5], isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(notes[5]) } // <-- Dokunma eklendi
-                        }
+    // Mirrors a realistic 6-string headstock peg layout and keeps direct string selection fast.
+    private var headstockView: some View {
+        ZStack {
+            RoundedRectangle(cornerRadius: 15)
+                .fill(Color.black.opacity(0.05))
+                .frame(width: 140, height: 280)
+                .overlay(
+                    Text("Headstock\nImage\nArea")
+                        .foregroundColor(.gray)
+                        .multilineTextAlignment(.center)
+                )
+            
+            let notes = viewModel.currentTuning.notes
+            
+            if notes.count == 6 {
+                HStack(spacing: 70) {
+                    VStack(spacing: 30) {
+                        PegButton(
+                            note: notes[0],
+                            isActive: viewModel.targetNote == notes[0],
+                            isCompleted: viewModel.isNoteCompleted(notes[0]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[0]) }
+                        PegButton(
+                            note: notes[1],
+                            isActive: viewModel.targetNote == notes[1],
+                            isCompleted: viewModel.isNoteCompleted(notes[1]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[1]) }
+                        PegButton(
+                            note: notes[2],
+                            isActive: viewModel.targetNote == notes[2],
+                            isCompleted: viewModel.isNoteCompleted(notes[2]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[2]) }
                     }
-                } else {
-                    // Fallback for non-6-string
-                    HStack {
-                        ForEach(notes) { note in
-                            PegButton(note: note, isActive: viewModel.targetNote == note, isDarkTheme: false)
-                                .onTapGesture { viewModel.setTargetNote(note) } // <-- Dokunma eklendi
-                        }
+                    
+                    VStack(spacing: 30) {
+                        PegButton(
+                            note: notes[3],
+                            isActive: viewModel.targetNote == notes[3],
+                            isCompleted: viewModel.isNoteCompleted(notes[3]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[3]) }
+                        PegButton(
+                            note: notes[4],
+                            isActive: viewModel.targetNote == notes[4],
+                            isCompleted: viewModel.isNoteCompleted(notes[4]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[4]) }
+                        PegButton(
+                            note: notes[5],
+                            isActive: viewModel.targetNote == notes[5],
+                            isCompleted: viewModel.isNoteCompleted(notes[5]),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(notes[5]) }
+                    }
+                }
+            } else {
+                HStack {
+                    ForEach(notes) { note in
+                        PegButton(
+                            note: note,
+                            isActive: viewModel.targetNote == note,
+                            isCompleted: viewModel.isNoteCompleted(note),
+                            isDarkTheme: false
+                        )
+                            .onTapGesture { viewModel.setTargetNote(note) }
                     }
                 }
             }
-            .frame(height: 300)
         }
+        .frame(height: 300)
+    }
 }
 
-// Subcomponent for Tuning Pegs
 struct PegButton: View {
     var note: Note
     var isActive: Bool
-    var isDarkTheme: Bool = true // Used to switch colors depending on background
+    var isCompleted: Bool = false
+    var isDarkTheme: Bool = true
     
     var body: some View {
         Text(note.name)
@@ -265,6 +304,15 @@ struct PegButton: View {
             )
             .foregroundColor(isActive ? .white : (isDarkTheme ? .white : .black))
             .animation(.spring(), value: isActive)
+            .overlay(alignment: .topTrailing) {
+                if isCompleted {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundColor(.green)
+                        .background(Circle().fill(Color.white))
+                        .offset(x: 4, y: -4)
+                }
+            }
     }
 }
 
