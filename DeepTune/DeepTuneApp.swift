@@ -12,6 +12,7 @@ struct DeepTuneApp: App {
     var body: some Scene {
         WindowGroup {
             ContentView()
+                .tint(AppTheme.accent)
         }
     }
 }

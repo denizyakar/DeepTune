@@ -5,15 +5,30 @@ struct TuningPickerView: View {
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        NavigationView {
+        NavigationStack {
             List {
                 ForEach(InstrumentCatalog.allInstruments) { instrument in
                     instrumentSections(for: instrument)
                 }
             }
+            .listStyle(.insetGrouped)
+            .scrollContentBackground(.hidden)
+            .background(
+                LinearGradient(
+                    colors: [AppTheme.backgroundTop, AppTheme.backgroundBottom],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
             .navigationTitle("Select Tuning")
-            .navigationBarItems(trailing: Button("Done") { dismiss() })
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Done") { dismiss() }
+                        .foregroundColor(AppTheme.accent)
+                }
+            }
         }
+        .tint(AppTheme.accent)
     }
 
     @ViewBuilder
@@ -30,30 +45,36 @@ struct TuningPickerView: View {
 
     private func tuningRow(instrument: Instrument, tuning: Tuning) -> some View {
         Button {
-            viewModel.currentInstrument = instrument
-            viewModel.currentTuning = tuning
-            viewModel.setTargetNote(nil)
+            viewModel.setInstrumentAndTuning(instrument: instrument, tuning: tuning)
             dismiss()
         } label: {
             HStack {
-                Text(tuning.name)
-                    .foregroundColor(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(tuning.name)
+                        .foregroundColor(AppTheme.textPrimary)
+                    Text("\(tuning.notes.count)-string")
+                        .font(.caption)
+                        .foregroundColor(AppTheme.textSecondary)
+                }
                 Spacer()
                 if viewModel.currentInstrument == instrument && viewModel.currentTuning == tuning {
                     Image(systemName: "checkmark")
-                        .foregroundColor(.blue)
+                        .foregroundColor(AppTheme.accent)
                 }
             }
+            .padding(.vertical, 4)
         }
+        .listRowBackground(AppTheme.surfacePrimary)
     }
 
     private func groupHeader(instrument: Instrument, group: TuningGroup) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             Text("\(instrument.name) • \(group.title)")
+                .foregroundColor(AppTheme.textPrimary)
             if let subtitle = group.subtitle {
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundColor(.secondary)
+                    .foregroundColor(AppTheme.textSecondary)
             }
         }
         .textCase(nil)
