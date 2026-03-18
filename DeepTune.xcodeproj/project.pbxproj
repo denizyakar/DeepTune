@@ -9,16 +9,34 @@
 /* Begin PBXBuildFile section */
 		E901536A2F6881AD00F1F2B0 /* AudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E90153692F6881AD00F1F2B0 /* AudioKit */; };
 		E901536D2F6883F900F1F2B0 /* SoundpipeAudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */; };
+		E9B1000C2F70000100F1F2B0 /* AudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E90153692F6881AD00F1F2B0 /* AudioKit */; };
+		E9B1000D2F70000100F1F2B0 /* SoundpipeAudioKit in Frameworks */ = {isa = PBXBuildFile; productRef = E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		E9B1000A2F70000100F1F2B0 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = E92A1D492F68777F00F41F5A /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = E92A1D502F68777F00F41F5A;
+			remoteInfo = DeepTune;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		E92A1D512F68777F00F41F5A /* DeepTune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = DeepTune.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		E9B100012F70000100F1F2B0 /* DeepTuneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = DeepTuneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		E92A1D532F68777F00F41F5A /* DeepTune */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = DeepTune;
+			sourceTree = "<group>";
+		};
+		E9B100022F70000100F1F2B0 /* DeepTuneTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = DeepTuneTests;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -33,6 +51,15 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E9B100032F70000100F1F2B0 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				E9B1000D2F70000100F1F2B0 /* SoundpipeAudioKit in Frameworks */,
+				E9B1000C2F70000100F1F2B0 /* AudioKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -40,6 +67,7 @@
 			isa = PBXGroup;
 			children = (
 				E92A1D532F68777F00F41F5A /* DeepTune */,
+				E9B100022F70000100F1F2B0 /* DeepTuneTests */,
 				E92A1D522F68777F00F41F5A /* Products */,
 			);
 			sourceTree = "<group>";
@@ -48,6 +76,7 @@
 			isa = PBXGroup;
 			children = (
 				E92A1D512F68777F00F41F5A /* DeepTune.app */,
+				E9B100012F70000100F1F2B0 /* DeepTuneTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -79,6 +108,31 @@
 			productReference = E92A1D512F68777F00F41F5A /* DeepTune.app */;
 			productType = "com.apple.product-type.application";
 		};
+		E9B100062F70000100F1F2B0 /* DeepTuneTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = E9B100092F70000100F1F2B0 /* Build configuration list for PBXNativeTarget "DeepTuneTests" */;
+			buildPhases = (
+				E9B100052F70000100F1F2B0 /* Sources */,
+				E9B100032F70000100F1F2B0 /* Frameworks */,
+				E9B100042F70000100F1F2B0 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				E9B1000B2F70000100F1F2B0 /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				E9B100022F70000100F1F2B0 /* DeepTuneTests */,
+			);
+			name = DeepTuneTests;
+			packageProductDependencies = (
+				E90153692F6881AD00F1F2B0 /* AudioKit */,
+				E901536C2F6883F900F1F2B0 /* SoundpipeAudioKit */,
+			);
+			productName = DeepTuneTests;
+			productReference = E9B100012F70000100F1F2B0 /* DeepTuneTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -91,6 +145,10 @@
 				TargetAttributes = {
 					E92A1D502F68777F00F41F5A = {
 						CreatedOnToolsVersion = 26.3;
+					};
+					E9B100062F70000100F1F2B0 = {
+						CreatedOnToolsVersion = 26.3;
+						TestTargetID = E92A1D502F68777F00F41F5A;
 					};
 				};
 			};
@@ -113,12 +171,20 @@
 			projectRoot = "";
 			targets = (
 				E92A1D502F68777F00F41F5A /* DeepTune */,
+				E9B100062F70000100F1F2B0 /* DeepTuneTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		E92A1D4F2F68777F00F41F5A /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E9B100042F70000100F1F2B0 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -135,7 +201,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		E9B100052F70000100F1F2B0 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		E9B1000B2F70000100F1F2B0 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = E92A1D502F68777F00F41F5A /* DeepTune */;
+			targetProxy = E9B1000A2F70000100F1F2B0 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		E92A1D5A2F68778000F41F5A /* Debug */ = {
@@ -325,6 +406,58 @@
 			};
 			name = Release;
 		};
+		E9B100072F70000100F1F2B0 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8356NA7XBK;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.denizyakar.DeepTuneTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DeepTune.app/DeepTune";
+				TEST_TARGET_NAME = DeepTune;
+			};
+			name = Debug;
+		};
+		E9B100082F70000100F1F2B0 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 8356NA7XBK;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 26.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@loader_path/Frameworks",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.denizyakar.DeepTuneTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/DeepTune.app/DeepTune";
+				TEST_TARGET_NAME = DeepTune;
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -342,6 +475,15 @@
 			buildConfigurations = (
 				E92A1D5D2F68778000F41F5A /* Debug */,
 				E92A1D5E2F68778000F41F5A /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		E9B100092F70000100F1F2B0 /* Build configuration list for PBXNativeTarget "DeepTuneTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				E9B100072F70000100F1F2B0 /* Debug */,
+				E9B100082F70000100F1F2B0 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
