@@ -2,7 +2,7 @@ import Foundation
 import AVFoundation
 import Combine
 
-class PermissionManager: ObservableObject {
+final class PermissionManager: ObservableObject {
     @Published var isMicrophoneGranted: Bool = false
     
     init() {
@@ -10,17 +10,18 @@ class PermissionManager: ObservableObject {
     }
     
     func checkMicrophonePermission() {
-        let status = AVAudioSession.sharedInstance().recordPermission
-        switch status {
-        case .granted:
+        let isGranted: Bool
+        if #available(iOS 17.0, *) {
+            isGranted = AVAudioApplication.shared.recordPermission == .granted
+        } else {
+            isGranted = AVAudioSession.sharedInstance().recordPermission == .granted
+        }
+        
+        if isGranted {
             DispatchQueue.main.async { [weak self] in
                 self?.isMicrophoneGranted = true
             }
-        case .denied, .undetermined:
-            DispatchQueue.main.async { [weak self] in
-                self?.isMicrophoneGranted = false
-            }
-        @unknown default:
+        } else {
             DispatchQueue.main.async { [weak self] in
                 self?.isMicrophoneGranted = false
             }
@@ -28,10 +29,19 @@ class PermissionManager: ObservableObject {
     }
     
     func requestMicrophonePermission(completion: @escaping (Bool) -> Void) {
-        AVAudioSession.sharedInstance().requestRecordPermission { granted in
-            DispatchQueue.main.async { [weak self] in
-                self?.isMicrophoneGranted = granted
-                completion(granted)
+        if #available(iOS 17.0, *) {
+            AVAudioApplication.requestRecordPermission { granted in
+                DispatchQueue.main.async { [weak self] in
+                    self?.isMicrophoneGranted = granted
+                    completion(granted)
+                }
+            }
+        } else {
+            AVAudioSession.sharedInstance().requestRecordPermission { granted in
+                DispatchQueue.main.async { [weak self] in
+                    self?.isMicrophoneGranted = granted
+                    completion(granted)
+                }
             }
         }
     }
