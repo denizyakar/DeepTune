@@ -1,77 +1,85 @@
 import SwiftUI
 
 struct AutoStrobeArea: View {
+    @Environment(\.colorScheme) private var colorScheme
+
     let centsDistance: Float
     let targetNote: Note?
     let isTuningSuccessful: Bool
     let isSignalDetected: Bool
     let hasPitchReference: Bool
-    let tuneProgressRatio: Double
-    
-    private let maxVisualOffset: CGFloat = 92.0
+
+    private let maxVisualOffset: CGFloat = 152.0
     private let visualRangeCents: Float = 50.0
-    
+
+    private var feedbackColor: Color {
+        AppTheme.autoStrobeRampColor(
+            centsDistance: centsDistance,
+            isSignalDetected: isSignalDetected,
+            visualRangeCents: visualRangeCents
+        )
+    }
+
     var body: some View {
-        VStack(spacing: 8) {
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.black.opacity(0.92))
-                    .frame(height: 58)
-                
-                HStack(spacing: 13) {
-                    ForEach(0..<11, id: \.self) { index in
-                        Rectangle()
-                            .fill(index == 5 ? Color.clear : Color.white.opacity(0.08))
-                            .frame(width: 1, height: 34)
-                    }
-                }
-                
-                Rectangle()
-                    .fill(isTuningSuccessful ? Color.green : Color.yellow)
-                    .frame(width: 2, height: 58)
-                
-                if let targetNote {
-                    Text("\(targetNote.name)\(targetNote.octave)")
-                        .font(.system(size: 17, weight: .bold, design: .rounded))
-                        .foregroundColor(isTuningSuccessful ? .green : .yellow)
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 3)
-                        .background(Color.black.opacity(0.65))
-                        .cornerRadius(6)
-                }
-                
-                // Clamps the indicator to the edges so users still get direction feedback when very far off-target.
-                if hasPitchReference {
+        ZStack {
+            HStack(spacing: 0) {
+                ForEach(0..<21, id: \.self) { index in
+                    let distance = abs(index - 10)
                     Rectangle()
-                        .fill(isTuningSuccessful ? Color.green : (isSignalDetected ? Color.white : Color.white.opacity(0.55)))
-                        .frame(width: 4, height: 44)
-                        .offset(x: clampedOffset)
-                        .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.75), value: centsDistance)
-                }
-                
-                if !isSignalDetected {
-                    Text("NO SIGNAL")
-                        .font(.caption2.weight(.bold))
-                        .foregroundColor(.gray)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(Color.black.opacity(0.6))
-                        .cornerRadius(5)
-                        .offset(y: 18)
+                        .fill(index == 10 ? Color.clear : AppTheme.meterGrid.opacity(index.isMultiple(of: 2) ? 0.74 : 0.50))
+                        .frame(width: index == 10 ? 0 : 1.35, height: CGFloat(max(24, 82 - (distance * 5))))
+                        .frame(maxWidth: .infinity)
                 }
             }
-            
-            Text(String(format: "%.1f cents", centsDistance))
-                .font(.caption)
-                .foregroundColor(isTuningSuccessful ? .green : (isSignalDetected ? .gray : .gray.opacity(0.7)))
-            
-            ProgressView(value: tuneProgressRatio)
-                .progressViewStyle(.linear)
-                .tint(isTuningSuccessful ? .green : .yellow)
-                .opacity(isSignalDetected || tuneProgressRatio > 0 ? 1.0 : 0.45)
+            .padding(.horizontal, 0)
+
+            Rectangle()
+                .fill(feedbackColor.opacity(0.92))
+                .frame(width: 2.8, height: 96)
+
+            if let targetNote {
+                Text("\(targetNote.name)\(targetNote.octave)")
+                    .font(.system(size: 21, weight: .heavy, design: .rounded))
+                    .foregroundColor(targetTextColor)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 5)
+                    .background(
+                        Capsule()
+                            .fill(targetBadgeFill)
+                            .overlay(Capsule().stroke(AppTheme.meterGrid.opacity(0.55), lineWidth: 1.2))
+                    )
+                    .offset(y: -22)
+            }
+
+            if hasPitchReference {
+                RoundedRectangle(cornerRadius: 2, style: .continuous)
+                    .fill(feedbackColor)
+                    .frame(width: 6.6, height: 70)
+                    .offset(x: clampedOffset)
+                    .animation(.interactiveSpring(response: 0.22, dampingFraction: 0.76), value: centsDistance)
+            }
+
+            if !isSignalDetected {
+                Text("NO SIGNAL")
+                    .font(.caption2.weight(.bold))
+                    .foregroundColor(AppTheme.textSecondary)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(AppTheme.surfaceSecondary.opacity(0.9)))
+                    .offset(y: 28)
+            }
         }
+        .frame(height: 94)
     }
-    
+
+    private var targetBadgeFill: Color {
+        colorScheme == .dark ? AppTheme.surfaceSecondary.opacity(0.22) : AppTheme.accent.opacity(0.42)
+    }
+
+    private var targetTextColor: Color {
+        colorScheme == .dark ? .white : AppTheme.textPrimary
+    }
+
     private var clampedOffset: CGFloat {
         let normalized = CGFloat(centsDistance / visualRangeCents)
         return max(-maxVisualOffset, min(maxVisualOffset, normalized * maxVisualOffset))
