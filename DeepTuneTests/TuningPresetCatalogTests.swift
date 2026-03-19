@@ -41,4 +41,50 @@ final class TuningPresetCatalogTests: XCTestCase {
             }
         }
     }
+
+    func testExtendedInstrumentCatalogIncludesExpectedInstruments() {
+        let names = Set(InstrumentCatalog.allInstruments.map(\.name))
+
+        XCTAssertTrue(names.contains("6-String Guitar"))
+        XCTAssertTrue(names.contains("7-String Guitar"))
+        XCTAssertTrue(names.contains("4-String Bass"))
+        XCTAssertTrue(names.contains("4-String Ukulele"))
+    }
+
+    func testAllInstrumentTuningsHaveConsistentStringCountsAndAscendingFrequencies() {
+        for instrument in InstrumentCatalog.allInstruments {
+            let groups = InstrumentCatalog.tuningGroups(for: instrument)
+            XCTAssertFalse(groups.isEmpty, "Missing tuning groups for \(instrument.name)")
+
+            let tunings = groups.flatMap(\.tunings)
+            XCTAssertFalse(tunings.isEmpty, "Missing tunings for \(instrument.name)")
+
+            let expectedStringCount = instrument.defaultTuning.notes.count
+            for tuning in tunings {
+                XCTAssertEqual(
+                    tuning.notes.count,
+                    expectedStringCount,
+                    "Invalid string count in \(instrument.name) / \(tuning.name)"
+                )
+
+                for (lhs, rhs) in zip(tuning.notes, tuning.notes.dropFirst()) {
+                    XCTAssertLessThan(
+                        lhs.frequency,
+                        rhs.frequency,
+                        "Frequency order is invalid in \(instrument.name) / \(tuning.name)"
+                    )
+                }
+            }
+        }
+    }
+
+    func testNewInstrumentsExposeMultipleTuningGroups() {
+        let newInstruments = [InstrumentCatalog.guitar7, InstrumentCatalog.bass4, InstrumentCatalog.ukulele4]
+
+        for instrument in newInstruments {
+            let groups = InstrumentCatalog.tuningGroups(for: instrument)
+            XCTAssertGreaterThanOrEqual(groups.count, 2, "\(instrument.name) should provide grouped presets")
+            XCTAssertEqual(groups.first?.title, "Common")
+        }
+    }
 }

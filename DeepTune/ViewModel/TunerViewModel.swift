@@ -49,7 +49,10 @@ final class TunerViewModel: ObservableObject {
         }
     }
     
-    private let conductor = TunerConductor()
+    private let conductorDataPublisher: AnyPublisher<PitchData, Never>
+    private let startConductorHandler: () -> Void
+    private let stopConductorHandler: () -> Void
+    private let setTrackingTargetFrequencyHandler: (Float?) -> Void
     private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
@@ -58,6 +61,7 @@ final class TunerViewModel: ObservableObject {
     private let centsSmoothingFactor: Float = 0.2
     private let inTuneEnterWindowCents: Float = 7.0
     private let inTuneExitWindowCents: Float = 11.0
+    private let autoAcquireAcceptanceWindowCents: Float = 950.0
     private let successThreshold: Double = 2.5
     private let signalHoldDuration: TimeInterval = 1.0
     private let successLatchDuration: TimeInterval = 1.0
@@ -74,12 +78,21 @@ final class TunerViewModel: ObservableObject {
     private var manualCandidateStreak = 0
     private let manualSwitchRequiredFrames = 4
     
-    init(instrument: Instrument = InstrumentCatalog.guitar6) {
+    init(
+        instrument: Instrument = InstrumentCatalog.guitar6,
+        conductor: TunerConductorType = TunerConductor()
+    ) {
         self.currentInstrument = instrument
         self.currentTuning = instrument.defaultTuning
         self.targetNote = instrument.defaultTuning.notes.first
+        self.conductorDataPublisher = conductor.dataPublisher
+        self.startConductorHandler = { conductor.start() }
+        self.stopConductorHandler = { conductor.stop() }
+        self.setTrackingTargetFrequencyHandler = { frequency in
+            conductor.setTrackingTargetFrequency(frequency)
+        }
         
-        conductor.$data
+        conductorDataPublisher
             .receive(on: RunLoop.main)
             .sink { [weak self] data in
                 self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
@@ -88,13 +101,17 @@ final class TunerViewModel: ObservableObject {
         
         applyTrackingTargetToConductor()
     }
+
+    deinit {
+        cancellables.removeAll()
+    }
     
     func start() {
-        conductor.start()
+        startConductorHandler()
     }
     
     func stop() {
-        conductor.stop()
+        stopConductorHandler()
     }
     
     func setTargetNote(_ note: Note?) {
@@ -244,7 +261,7 @@ final class TunerViewModel: ObservableObject {
         let targetFrequency = Float(target.frequency)
         let targetCents = 1200.0 * log2(smoothedPitch / targetFrequency)
         
-        guard abs(targetCents) <= 360 else {
+        guard abs(targetCents) <= autoAcquireAcceptanceWindowCents else {
             isTargetSignalDetected = false
             if !currentTargetIsCompleted {
                 tuneProgressSeconds = max(0.0, tuneProgressSeconds - (frameDelta * 1.1))
@@ -268,7 +285,14 @@ final class TunerViewModel: ObservableObject {
         let smoothedTargetCents = smooth(previous: autoCentsDistance, current: medianTargetCents, factor: adaptiveFactor)
         
         // Limits unrealistically fast meter jumps caused by harmonics/noise spikes.
-        let dynamicRateLimit: Float = abs(autoCentsDistance) > 90 ? 180 : 120
+        let dynamicRateLimit: Float
+        if abs(autoCentsDistance) > 300 {
+            dynamicRateLimit = 320
+        } else if abs(autoCentsDistance) > 90 {
+            dynamicRateLimit = 180
+        } else {
+            dynamicRateLimit = 120
+        }
         let maxStep = Float(frameDelta) * dynamicRateLimit
         let delta = smoothedTargetCents - autoCentsDistance
         let limitedDelta = max(-maxStep, min(maxStep, delta))
@@ -431,11 +455,11 @@ final class TunerViewModel: ObservableObject {
     
     private func applyTrackingTargetToConductor() {
         guard activeMode == .auto, let targetNote else {
-            conductor.setTrackingTargetFrequency(nil)
+            setTrackingTargetFrequencyHandler(nil)
             return
         }
         
-        conductor.setTrackingTargetFrequency(Float(targetNote.frequency))
+        setTrackingTargetFrequencyHandler(Float(targetNote.frequency))
     }
     
     private func wrappedCents(_ cents: Float) -> Float {

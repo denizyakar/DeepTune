@@ -130,6 +130,7 @@ enum TunerRegressionSuite {
         let groups = InstrumentCatalog.tuningGroups(for: instrument)
         let allTunings = groups.flatMap(\.tunings)
         let tuningNames = allTunings.map(\.name)
+        let expectedStringCount = instrument.defaultTuning.notes.count
 
         let expectedCommon = [
             "E Standard", "Eb Standard", "D Standard", "C# Standard", "C Standard",
@@ -137,8 +138,8 @@ enum TunerRegressionSuite {
             "B Standard", "Drop B", "Drop A"
         ]
 
-        let containsCommon = expectedCommon.allSatisfy { tuningNames.contains($0) }
-        let allSixStrings = allTunings.allSatisfy { $0.notes.count == 6 }
+        let containsCommon = instrument.type == .guitar6 ? expectedCommon.allSatisfy { tuningNames.contains($0) } : true
+        let allExpectedStringCount = allTunings.allSatisfy { $0.notes.count == expectedStringCount }
         let ascendingFrequencies = allTunings.allSatisfy { tuning in
             zip(tuning.notes, tuning.notes.dropFirst()).allSatisfy { lhs, rhs in lhs.frequency < rhs.frequency }
         }
@@ -148,12 +149,16 @@ enum TunerRegressionSuite {
             RegressionCheck(
                 name: "Preset includes required common tunings",
                 passed: containsCommon,
-                detail: "required=\(expectedCommon.count), available=\(tuningNames.count)"
+                detail: instrument.type == .guitar6
+                    ? "required=\(expectedCommon.count), available=\(tuningNames.count)"
+                    : "instrument-specific common check skipped"
             ),
             RegressionCheck(
-                name: "All presets are 6-string definitions",
-                passed: allSixStrings,
-                detail: allSixStrings ? "all presets have 6 notes" : "one or more presets has invalid string count"
+                name: "All presets have consistent string count",
+                passed: allExpectedStringCount,
+                detail: allExpectedStringCount
+                    ? "all presets have \(expectedStringCount) notes"
+                    : "one or more presets has invalid string count"
             ),
             RegressionCheck(
                 name: "Preset frequencies are strictly ascending",

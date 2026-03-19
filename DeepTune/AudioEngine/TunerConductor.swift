@@ -4,31 +4,54 @@ import AVFoundation
 import AudioKit
 import SoundpipeAudioKit
 
+protocol TunerConductorType: AnyObject {
+    var dataPublisher: AnyPublisher<PitchData, Never> { get }
+    func start()
+    func stop()
+    func setTrackingTargetFrequency(_ frequency: Float?)
+}
+
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
-class TunerConductor: ObservableObject {
+class TunerConductor: ObservableObject, TunerConductorType {
     @Published var data = PitchData()
     @Published var isStarted = false
     
     let engine = AudioEngine()
     let initialDevice: Device
     
-    var mic: AudioEngine.InputNode
+    var mic: Node
     var tappableNodeA: Mixer
     var tappableNodeB: Mixer
     var tappableNodeC: Mixer
     var silencer: Mixer
     
     var tracker: PitchTap!
+
+    private enum AutoTrackingState {
+        case acquire
+        case fineLock
+    }
     
     private let autoSignalOnThreshold: Float = 0.014
     private let autoSignalOffThreshold: Float = 0.008
     private let manualSignalOnThreshold: Float = 0.009
     private let manualSignalOffThreshold: Float = 0.0045
-    private let minTrackablePitch: Float = 60.0
-    private let maxTrackablePitch: Float = 1400.0
+    private let manualMinTrackablePitch: Float = 30.0
+    private let manualMaxTrackablePitch: Float = 1800.0
+    private let autoMinTrackablePitch: Float = 30.0
+    private let autoMaxTrackablePitch: Float = 1800.0
     private let autoTransientIgnoreDuration: TimeInterval = 0.06
     private let manualTransientIgnoreDuration: TimeInterval = 0.02
-    private let maxTargetOffsetCents: Float = 280.0
+    private let autoAcquireWindowCents: Float = 950.0
+    private let autoFineLockWindowCents: Float = 280.0
+    private let fineLockEnterCents: Float = 240.0
+    private let fineLockExitCents: Float = 360.0
+    private let octaveShiftPenaltyAcquire: Float = 260.0
+    private let octaveShiftPenaltyFineLock: Float = 380.0
+    private let harmonicPenaltyAcquire: Float = 34.0
+    private let harmonicPenaltyFineLock: Float = 55.0
+    private let acquireStableFramesToLock = 3
+    private let fineLockMissFramesToDrop = 4
     private let rejectionHoldDuration: TimeInterval = 0.12
     private let amplitudeSmoothingFactor: Float = 0.25
     private var smoothedAmplitude: Float = 0.0
@@ -37,6 +60,13 @@ class TunerConductor: ObservableObject {
     private var lastAcceptedPitch: Float = 0.0
     private var lastAcceptedAt: Date?
     private var trackingTargetFrequency: Float?
+    private var autoTrackingState: AutoTrackingState = .acquire
+    private var acquireStableFrameCount = 0
+    private var fineLockMissFrameCount = 0
+
+    var dataPublisher: AnyPublisher<PitchData, Never> {
+        $data.eraseToAnyPublisher()
+    }
     
     init() {
         // Essential for iOS/Simulator to allow microphone access
@@ -48,10 +78,6 @@ class TunerConductor: ObservableObject {
             print("Failed to set up AVAudioSession: \(error)")
         }
         
-        guard let input = engine.input else {
-            fatalError("Audio Engine input node is missing")
-        }
-        
         // Simulators sometimes fail `engine.inputDevice`. Safe-fallback instead of fatalError.
         if let device = engine.inputDevice {
             initialDevice = device
@@ -61,8 +87,12 @@ class TunerConductor: ObservableObject {
             // In AudioKit, if inputDevice is nil, it just uses the default route.
             initialDevice = Device(name: "Simulator Device", deviceID: "SimID")
         }
-        
-        mic = input
+        if let input = engine.input {
+            mic = input
+        } else {
+            // Keep unit tests and no-input environments alive with a silent fallback node.
+            mic = Mixer()
+        }
         tappableNodeA = Mixer(mic)
         tappableNodeB = Mixer(tappableNodeA)
         tappableNodeC = Mixer(tappableNodeB)
@@ -97,6 +127,7 @@ class TunerConductor: ObservableObject {
         trackingTargetFrequency = frequency
         lastAcceptedPitch = 0.0
         lastAcceptedAt = nil
+        resetAutoTrackingState()
     }
     
     private func update(pitch: Float, amp: Float) {
@@ -126,9 +157,11 @@ class TunerConductor: ObservableObject {
             signalOpenedAt = nil
         }
         
+        let pitchBounds = resolvedTrackablePitchBounds(isTargetedTracking: isTargetedTracking)
         guard isSignalOpen,
-              pitch >= minTrackablePitch,
-              pitch <= maxTrackablePitch else {
+              pitch >= pitchBounds.lowerBound,
+              pitch <= pitchBounds.upperBound else {
+            registerAutoTrackingMissIfNeeded()
             self.data = PitchData()
             return
         }
@@ -136,68 +169,95 @@ class TunerConductor: ObservableObject {
         // Ignore the first short transient right after signal opens.
         if let signalOpenedAt, now.timeIntervalSince(signalOpenedAt) < transientIgnoreDuration {
             if isTargetedTracking {
+                registerAutoTrackingMissIfNeeded()
                 self.data = PitchData()
             } else {
                 publishRejectedFrameFallback(now: now)
             }
             return
         }
-        
-        guard let resolvedPitch = resolvePitchCandidate(rawPitch: pitch) else {
+
+        guard let resolved = resolvePitchCandidate(rawPitch: pitch) else {
             if isTargetedTracking {
+                registerAutoTrackingMissIfNeeded()
                 self.data = PitchData()
             } else {
                 publishRejectedFrameFallback(now: now)
             }
             return
         }
-        
-        if isUnstableHarmonicJump(newPitch: resolvedPitch, now: now) {
+
+        if isUnstableHarmonicJump(newPitch: resolved.pitch, now: now) {
             if isTargetedTracking {
+                registerAutoTrackingMissIfNeeded()
                 self.data = PitchData()
             } else {
                 publishRejectedFrameFallback(now: now)
             }
             return
         }
-        
-        lastAcceptedPitch = resolvedPitch
+
+        if let centsFromTarget = resolved.centsFromTarget {
+            updateAutoTrackingState(absTargetCents: abs(centsFromTarget))
+        } else {
+            resetAutoTrackingState()
+        }
+
+        lastAcceptedPitch = resolved.pitch
         lastAcceptedAt = now
-        
-        self.data.pitch = resolvedPitch
+
+        self.data.pitch = resolved.pitch
         self.data.amplitude = smoothedAmplitude
     }
-    
-    private func resolvePitchCandidate(rawPitch: Float) -> Float? {
+
+    private struct ResolvedPitchCandidate {
+        let pitch: Float
+        let centsFromTarget: Float?
+    }
+
+    private func resolvePitchCandidate(rawPitch: Float) -> ResolvedPitchCandidate? {
         guard let targetFrequency = trackingTargetFrequency else {
-            return rawPitch
+            return ResolvedPitchCandidate(pitch: rawPitch, centsFromTarget: nil)
         }
-        
+
         var bestPitch: Float?
-        var bestAbsCents: Float = .greatestFiniteMagnitude
+        var bestCents: Float = 0.0
+        var bestScore: Float = .greatestFiniteMagnitude
         // Keep octave harmonics (x2) but avoid 3rd-harmonic remapping that can create false locks.
         let divisors: [Float] = [1, 2]
-        
+        let octavePenalty = autoTrackingState == .fineLock ? octaveShiftPenaltyFineLock : octaveShiftPenaltyAcquire
+        let harmonicPenalty = autoTrackingState == .fineLock ? harmonicPenaltyFineLock : harmonicPenaltyAcquire
+        let activeWindowCents = autoTrackingState == .fineLock ? autoFineLockWindowCents : autoAcquireWindowCents
+
         for divisor in divisors {
             let base = rawPitch / divisor
             for octaveShift in -2...2 {
                 let candidate = base * pow(2.0, Float(octaveShift))
-                guard candidate >= minTrackablePitch, candidate <= maxTrackablePitch else { continue }
-                
+                guard candidate >= autoMinTrackablePitch, candidate <= autoMaxTrackablePitch else { continue }
+
                 let cents = 1200.0 * log2(candidate / targetFrequency)
                 let absCents = abs(cents)
-                if absCents < bestAbsCents {
-                    bestAbsCents = absCents
+                guard absCents <= activeWindowCents else { continue }
+
+                var score = absCents
+                score += abs(Float(octaveShift)) * octavePenalty
+                if divisor != 1 {
+                    score += harmonicPenalty
+                }
+
+                if score < bestScore {
+                    bestScore = score
                     bestPitch = candidate
+                    bestCents = cents
                 }
             }
         }
-        
-        guard let resolved = bestPitch, bestAbsCents <= maxTargetOffsetCents else {
+
+        guard let resolved = bestPitch else {
             return nil
         }
-        
-        return resolved
+
+        return ResolvedPitchCandidate(pitch: resolved, centsFromTarget: bestCents)
     }
     
     private func isUnstableHarmonicJump(newPitch: Float, now: Date) -> Bool {
@@ -221,12 +281,73 @@ class TunerConductor: ObservableObject {
         self.data.pitch = lastAcceptedPitch
         self.data.amplitude = max(smoothedAmplitude * 0.65, 0.005)
     }
+
+    private func resolvedTrackablePitchBounds(isTargetedTracking: Bool) -> ClosedRange<Float> {
+        if isTargetedTracking {
+            return autoMinTrackablePitch...autoMaxTrackablePitch
+        }
+        return manualMinTrackablePitch...manualMaxTrackablePitch
+    }
+
+    private func updateAutoTrackingState(absTargetCents: Float) {
+        guard trackingTargetFrequency != nil else {
+            resetAutoTrackingState()
+            return
+        }
+
+        switch autoTrackingState {
+        case .acquire:
+            fineLockMissFrameCount = 0
+            if absTargetCents <= fineLockEnterCents {
+                acquireStableFrameCount += 1
+                if acquireStableFrameCount >= acquireStableFramesToLock {
+                    autoTrackingState = .fineLock
+                    acquireStableFrameCount = 0
+                }
+            } else {
+                acquireStableFrameCount = 0
+            }
+        case .fineLock:
+            if absTargetCents > fineLockExitCents {
+                fineLockMissFrameCount += 1
+                if fineLockMissFrameCount >= fineLockMissFramesToDrop {
+                    resetAutoTrackingState()
+                }
+            } else {
+                fineLockMissFrameCount = 0
+            }
+        }
+    }
+
+    private func registerAutoTrackingMissIfNeeded() {
+        guard trackingTargetFrequency != nil else { return }
+
+        switch autoTrackingState {
+        case .acquire:
+            acquireStableFrameCount = 0
+        case .fineLock:
+            fineLockMissFrameCount += 1
+            if fineLockMissFrameCount >= fineLockMissFramesToDrop {
+                resetAutoTrackingState()
+            }
+        }
+    }
+
+    private func resetAutoTrackingState() {
+        autoTrackingState = .acquire
+        acquireStableFrameCount = 0
+        fineLockMissFrameCount = 0
+    }
     
     private func resolvedSignalOnThreshold(isTargetedTracking: Bool) -> Float {
         guard isTargetedTracking else { return manualSignalOnThreshold }
         guard let target = trackingTargetFrequency else { return autoSignalOnThreshold }
         
-        // Low E / High E strings tend to present less stable amplitudes on phone mics.
+        // Very low strings and very high strings tend to present less stable amplitudes on phone mics.
+        if target < 70 || target > 420 {
+            return autoSignalOnThreshold * 0.64
+        }
+
         if target < 95 || target > 300 {
             return autoSignalOnThreshold * 0.72
         }
@@ -238,6 +359,10 @@ class TunerConductor: ObservableObject {
         guard isTargetedTracking else { return manualSignalOffThreshold }
         guard let target = trackingTargetFrequency else { return autoSignalOffThreshold }
         
+        if target < 70 || target > 420 {
+            return autoSignalOffThreshold * 0.64
+        }
+
         if target < 95 || target > 300 {
             return autoSignalOffThreshold * 0.72
         }

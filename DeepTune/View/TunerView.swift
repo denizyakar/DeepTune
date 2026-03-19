@@ -263,7 +263,7 @@ struct TunerView: View {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     compactSelector(
-                        icon: "guitars.fill",
+                        icon: instrumentIconName(for: viewModel.currentInstrument.type),
                         title: viewModel.currentInstrument.name,
                         isInteractive: false
                     )
@@ -404,12 +404,50 @@ struct TunerView: View {
                     peg(for: notes[5])
                 }
             }
+        } else if notes.count == 7 {
+            HStack(spacing: columnSpacing) {
+                VStack(spacing: pegSpacing * 0.86) {
+                    peg(for: notes[0])
+                    peg(for: notes[1])
+                    peg(for: notes[2])
+                    peg(for: notes[3])
+                }
+
+                VStack(spacing: pegSpacing * 0.86) {
+                    peg(for: notes[4])
+                    peg(for: notes[5])
+                    peg(for: notes[6])
+                }
+            }
+        } else if notes.count == 4 {
+            HStack(spacing: columnSpacing * 0.9) {
+                VStack(spacing: pegSpacing * 1.2) {
+                    peg(for: notes[0])
+                    peg(for: notes[1])
+                }
+
+                VStack(spacing: pegSpacing * 1.2) {
+                    peg(for: notes[2])
+                    peg(for: notes[3])
+                }
+            }
         } else {
             HStack(spacing: 10) {
                 ForEach(notes) { note in
                     peg(for: note)
                 }
             }
+        }
+    }
+
+    private func instrumentIconName(for type: InstrumentType) -> String {
+        switch type {
+        case .guitar6, .guitar7, .guitar8:
+            return "guitars.fill"
+        case .bass:
+            return "music.note.list"
+        case .ukulele:
+            return "music.quarternote.3"
         }
     }
 
