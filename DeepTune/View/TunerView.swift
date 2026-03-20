@@ -100,15 +100,13 @@ struct TunerView: View {
                     autoProgressBar
                         .opacity(viewModel.isTargetSignalDetected || viewModel.tuneProgressRatio > 0 ? 1.0 : 0.45)
 
-                        ZStack(alignment: .bottomTrailing) {
-                            headstockView
-                                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    HStack {
+                        Spacer()
+                        floatingAutoProgressControl
+                    }
+                    .padding(.top, 2)
 
-                            floatingAutoProgressControl
-                                .padding(.trailing, 6)
-                                .padding(.bottom, 48)
-                                .zIndex(1)
-                        }
+                    headstockView
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                     }
                     .padding(.horizontal, 2)
@@ -127,14 +125,14 @@ struct TunerView: View {
         AppTheme.autoStrobeRampColor(
             centsDistance: viewModel.autoCentsDistance,
             isSignalDetected: viewModel.isTargetSignalDetected,
-            visualRangeCents: 50.0
+            visualRangeCents: 80.0
         )
     }
 
     private var autoProgressBar: some View {
         GeometryReader { proxy in
-            let ratio = max(0.0, min(1.0, viewModel.tuneProgressRatio))
-            let fillWidth = max(6.0, proxy.size.width * ratio)
+            let ratio = CGFloat(max(0.0, min(1.0, viewModel.tuneProgressRatio)))
+            let fillWidth = max(CGFloat(6.0), proxy.size.width * ratio)
 
             ZStack(alignment: .leading) {
                 Capsule()
