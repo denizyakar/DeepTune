@@ -54,4 +54,39 @@ final class TunerViewModelWorkflowTests: XCTestCase {
         XCTAssertNil(viewModel.manualLowestFrequency)
         XCTAssertNil(viewModel.manualHighestFrequency)
     }
+
+    func testPersistedInstrumentTuningAndAutoProgressAreRestored() {
+        let suiteName = "DeepTuneTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            XCTFail("Unable to create isolated UserDefaults suite")
+            return
+        }
+
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+
+        let mockConductor = MockConductor()
+        let firstSession = TunerViewModel(
+            instrument: InstrumentCatalog.guitar6,
+            conductor: mockConductor,
+            userDefaults: defaults
+        )
+        firstSession.setInstrumentAndTuning(
+            instrument: InstrumentCatalog.bass4,
+            tuning: InstrumentCatalog.bass4DropC
+        )
+        firstSession.isAutoProgressEnabled = true
+
+        let secondSession = TunerViewModel(
+            instrument: InstrumentCatalog.guitar6,
+            conductor: mockConductor,
+            userDefaults: defaults
+        )
+
+        XCTAssertEqual(secondSession.currentInstrument.type, .bass)
+        XCTAssertEqual(secondSession.currentTuning.name, InstrumentCatalog.bass4DropC.name)
+        XCTAssertEqual(secondSession.currentTuning.notes.map(\.fullName), InstrumentCatalog.bass4DropC.notes.map(\.fullName))
+        XCTAssertTrue(secondSession.isAutoProgressEnabled)
+    }
 }
