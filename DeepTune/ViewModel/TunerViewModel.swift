@@ -137,6 +137,13 @@ final class TunerViewModel: ObservableObject {
         completedNoteIDs.removeAll()
         setTargetNote(tuning.notes.first)
     }
+
+    func setInstrument(_ instrument: Instrument) {
+        if currentInstrument == instrument {
+            return
+        }
+        setInstrumentAndTuning(instrument: instrument, tuning: instrument.defaultTuning)
+    }
     
     func setActiveMode(_ mode: TunerMode) {
         activeMode = mode

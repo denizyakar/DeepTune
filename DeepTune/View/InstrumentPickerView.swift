@@ -1,21 +1,14 @@
 import SwiftUI
 
-struct TuningPickerView: View {
+struct InstrumentPickerView: View {
     @ObservedObject var viewModel: TunerViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let instrument = viewModel.currentInstrument
-
         NavigationStack {
             List {
-                let groups = InstrumentCatalog.tuningGroups(for: instrument)
-                ForEach(groups) { group in
-                    Section(header: groupHeader(instrument: instrument, group: group)) {
-                        ForEach(group.tunings) { tuning in
-                            tuningRow(instrument: instrument, tuning: tuning)
-                        }
-                    }
+                ForEach(selectableInstruments) { instrument in
+                    instrumentRow(instrument)
                 }
             }
             .listStyle(.insetGrouped)
@@ -27,7 +20,7 @@ struct TuningPickerView: View {
                     endPoint: .bottomTrailing
                 )
             )
-            .navigationTitle("Select Tuning")
+            .navigationTitle("Select Instrument")
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Done") { dismiss() }
@@ -38,21 +31,25 @@ struct TuningPickerView: View {
         .tint(AppTheme.accent)
     }
 
-    private func tuningRow(instrument: Instrument, tuning: Tuning) -> some View {
+    private var selectableInstruments: [Instrument] {
+        InstrumentCatalog.allInstruments.filter { $0.type != .guitar7 }
+    }
+
+    private func instrumentRow(_ instrument: Instrument) -> some View {
         Button {
-            viewModel.setInstrumentAndTuning(instrument: instrument, tuning: tuning)
+            viewModel.setInstrument(instrument)
             dismiss()
         } label: {
             HStack {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(tuning.name)
+                    Text(instrument.name)
                         .foregroundColor(AppTheme.textPrimary)
-                    Text("\(tuning.notes.count)-string")
+                    Text("\(instrument.availableTunings.count) tuning options")
                         .font(.caption)
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 Spacer()
-                if viewModel.currentInstrument == instrument && viewModel.currentTuning == tuning {
+                if viewModel.currentInstrument == instrument {
                     Image(systemName: "checkmark")
                         .foregroundColor(AppTheme.accent)
                 }
@@ -60,18 +57,5 @@ struct TuningPickerView: View {
             .padding(.vertical, 4)
         }
         .listRowBackground(AppTheme.surfacePrimary)
-    }
-
-    private func groupHeader(instrument: Instrument, group: TuningGroup) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("\(instrument.name) • \(group.title)")
-                .foregroundColor(AppTheme.textPrimary)
-            if let subtitle = group.subtitle {
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(AppTheme.textSecondary)
-            }
-        }
-        .textCase(nil)
     }
 }
