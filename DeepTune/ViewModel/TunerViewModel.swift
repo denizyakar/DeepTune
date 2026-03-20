@@ -15,6 +15,12 @@ enum TunerMode: Hashable {
 }
 
 final class TunerViewModel: ObservableObject {
+    private enum PersistenceKey {
+        static let instrumentType = "DeepTune.selectedInstrumentType"
+        static let tuningSignature = "DeepTune.selectedTuningSignature"
+        static let autoProgressEnabled = "DeepTune.autoProgressEnabled"
+    }
+
     @Published var currentInstrument: Instrument
     @Published var currentTuning: Tuning
     
@@ -28,7 +34,11 @@ final class TunerViewModel: ObservableObject {
     // Auto mode output (target-string based).
     @Published var autoCentsDistance: Float = 0.0
     @Published var targetNote: Note?
-    @Published var isAutoProgressEnabled: Bool = false
+    @Published var isAutoProgressEnabled: Bool = false {
+        didSet {
+            persistAutoProgressState()
+        }
+    }
     @Published var isTuningSuccessful: Bool = false
     @Published var inTuneDuration: Double = 0.0
     @Published private(set) var completedNoteIDs = Set<UUID>()
@@ -53,6 +63,7 @@ final class TunerViewModel: ObservableObject {
     private let startConductorHandler: () -> Void
     private let stopConductorHandler: () -> Void
     private let setTrackingTargetFrequencyHandler: (Float?) -> Void
+    private let userDefaults: UserDefaults
     private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
@@ -80,11 +91,17 @@ final class TunerViewModel: ObservableObject {
     
     init(
         instrument: Instrument = InstrumentCatalog.guitar6,
-        conductor: TunerConductorType = TunerConductor()
+        conductor: TunerConductorType = TunerConductor(),
+        userDefaults: UserDefaults = .standard
     ) {
-        self.currentInstrument = instrument
-        self.currentTuning = instrument.defaultTuning
-        self.targetNote = instrument.defaultTuning.notes.first
+        self.userDefaults = userDefaults
+        let restoredInstrument = Self.restoreInstrument(from: userDefaults) ?? instrument
+        let restoredTuning = Self.restoreTuning(for: restoredInstrument, from: userDefaults) ?? restoredInstrument.defaultTuning
+
+        self.currentInstrument = restoredInstrument
+        self.currentTuning = restoredTuning
+        self.targetNote = restoredTuning.notes.first
+        self.isAutoProgressEnabled = userDefaults.object(forKey: PersistenceKey.autoProgressEnabled) as? Bool ?? false
         self.conductorDataPublisher = conductor.dataPublisher
         self.startConductorHandler = { conductor.start() }
         self.stopConductorHandler = { conductor.stop() }
@@ -100,6 +117,8 @@ final class TunerViewModel: ObservableObject {
             .store(in: &cancellables)
         
         applyTrackingTargetToConductor()
+        persistSelectionState()
+        persistAutoProgressState()
     }
 
     deinit {
@@ -136,6 +155,7 @@ final class TunerViewModel: ObservableObject {
         currentTuning = tuning
         completedNoteIDs.removeAll()
         setTargetNote(tuning.notes.first)
+        persistSelectionState()
     }
 
     func setInstrument(_ instrument: Instrument) {
@@ -489,6 +509,71 @@ final class TunerViewModel: ObservableObject {
             return (sorted[middle - 1] + sorted[middle]) / 2
         } else {
             return sorted[middle]
+        }
+    }
+
+    private func persistSelectionState() {
+        userDefaults.set(currentInstrument.type.persistenceKey, forKey: PersistenceKey.instrumentType)
+        userDefaults.set(Self.tuningSignature(for: currentTuning), forKey: PersistenceKey.tuningSignature)
+    }
+
+    private func persistAutoProgressState() {
+        userDefaults.set(isAutoProgressEnabled, forKey: PersistenceKey.autoProgressEnabled)
+    }
+
+    private static func restoreInstrument(from userDefaults: UserDefaults) -> Instrument? {
+        guard let persistedType = userDefaults.string(forKey: PersistenceKey.instrumentType),
+              let instrumentType = InstrumentType(persistenceKey: persistedType) else {
+            return nil
+        }
+
+        return InstrumentCatalog.allInstruments.first { $0.type == instrumentType }
+    }
+
+    private static func restoreTuning(for instrument: Instrument, from userDefaults: UserDefaults) -> Tuning? {
+        guard let persistedSignature = userDefaults.string(forKey: PersistenceKey.tuningSignature) else {
+            return nil
+        }
+
+        return instrument.availableTunings.first { tuningSignature(for: $0) == persistedSignature }
+    }
+
+    private static func tuningSignature(for tuning: Tuning) -> String {
+        let noteSignature = tuning.notes.map(\.fullName).joined(separator: ",")
+        return "\(tuning.name)|\(noteSignature)"
+    }
+}
+
+private extension InstrumentType {
+    var persistenceKey: String {
+        switch self {
+        case .guitar6:
+            return "guitar6"
+        case .guitar7:
+            return "guitar7"
+        case .guitar8:
+            return "guitar8"
+        case .bass:
+            return "bass"
+        case .ukulele:
+            return "ukulele"
+        }
+    }
+
+    init?(persistenceKey: String) {
+        switch persistenceKey {
+        case "guitar6":
+            self = .guitar6
+        case "guitar7":
+            self = .guitar7
+        case "guitar8":
+            self = .guitar8
+        case "bass":
+            self = .bass
+        case "ukulele":
+            self = .ukulele
+        default:
+            return nil
         }
     }
 }
