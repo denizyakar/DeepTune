@@ -1,7 +1,14 @@
 import SwiftUI
 
+private enum TunerTab: Hashable {
+    case auto
+    case manual
+    case chord
+}
+
 struct TunerView: View {
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.scenePhase) private var scenePhase
 
     @StateObject private var viewModel: TunerViewModel
     @StateObject private var permissionManager: PermissionManager
@@ -10,7 +17,8 @@ struct TunerView: View {
     @State private var showInstrumentPicker = false
     @State private var showTuningPicker = false
     @State private var showPermissionAlert = false
-    @State private var selectedMode: TunerMode = .auto
+    @State private var selectedTab: TunerTab = .auto
+    @State private var isChordFinderSessionActive = false
 
     init(initialInstrument: Instrument = InstrumentCatalog.guitar6) {
         _viewModel = StateObject(wrappedValue: TunerViewModel(instrument: initialInstrument))
@@ -22,12 +30,12 @@ struct TunerView: View {
             AppTheme.backgroundTop
                 .ignoresSafeArea()
 
-            TabView(selection: $selectedMode) {
+            TabView(selection: $selectedTab) {
                 autoModeView
                     .tabItem {
                         Label("Auto", systemImage: "guitars")
                     }
-                    .tag(TunerMode.auto)
+                    .tag(TunerTab.auto)
                     .onAppear {
                         if viewModel.targetNote == nil {
                             viewModel.setTargetNote(viewModel.currentTuning.notes.first)
@@ -38,20 +46,36 @@ struct TunerView: View {
                     .tabItem {
                         Label("Manual", systemImage: "waveform.path")
                     }
-                    .tag(TunerMode.manual)
+                    .tag(TunerTab.manual)
+
+                chordModeView
+                    .tabItem {
+                        Label("Chord", systemImage: "music.note")
+                    }
+                    .tag(TunerTab.chord)
             }
         }
         .tint(AppTheme.accent)
         .onAppear {
-            viewModel.setActiveMode(selectedMode)
-            permissionManager.requestMicrophonePermission { granted in
-                if granted {
-                    viewModel.start()
-                }
-            }
+            applyAudioTrackingMode(for: selectedTab)
+            ensureMicrophonePermission()
+            synchronizeAudioState()
         }
-        .onChange(of: selectedMode) { _, newMode in
-            viewModel.setActiveMode(newMode)
+        .onChange(of: selectedTab) { _, newTab in
+            applyAudioTrackingMode(for: newTab)
+            if newTab != .chord {
+                isChordFinderSessionActive = false
+            }
+            synchronizeAudioState()
+        }
+        .onChange(of: permissionManager.isMicrophoneGranted) { _, _ in
+            synchronizeAudioState()
+        }
+        .onChange(of: scenePhase) { _, _ in
+            synchronizeAudioState()
+        }
+        .onChange(of: isChordFinderSessionActive) { _, _ in
+            synchronizeAudioState()
         }
         .onDisappear {
             viewModel.stop()
@@ -71,6 +95,41 @@ struct TunerView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("DeepTune needs microphone access to detect pitch. Please enable it in Settings.")
+        }
+    }
+
+    private var shouldRunAudioEngine: Bool {
+        guard scenePhase == .active, permissionManager.isMicrophoneGranted else { return false }
+
+        switch selectedTab {
+        case .auto, .manual:
+            return true
+        case .chord:
+            return isChordFinderSessionActive
+        }
+    }
+
+    private func synchronizeAudioState() {
+        if shouldRunAudioEngine {
+            viewModel.start()
+        } else {
+            viewModel.stop()
+        }
+    }
+
+    private func ensureMicrophonePermission() {
+        guard !permissionManager.isMicrophoneGranted else { return }
+        permissionManager.requestMicrophonePermission { _ in
+            synchronizeAudioState()
+        }
+    }
+
+    private func applyAudioTrackingMode(for tab: TunerTab) {
+        switch tab {
+        case .auto:
+            viewModel.setActiveMode(.auto)
+        case .manual, .chord:
+            viewModel.setActiveMode(.manual)
         }
     }
 
@@ -175,6 +234,30 @@ struct TunerView: View {
                     manualInfoPanel
                         .padding(16)
                         .appCard()
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 104)
+            }
+        }
+    }
+
+    private var chordModeView: some View {
+        ZStack {
+            AppTheme.backgroundTop
+                .ignoresSafeArea()
+
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 8) {
+                    headerView
+                        .frame(height: 88)
+
+                    ChordFinderView(
+                        viewModel: viewModel,
+                        isSessionActive: $isChordFinderSessionActive
+                    )
+                    .padding(16)
+                    .appCard()
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 8)

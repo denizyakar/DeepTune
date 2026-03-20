@@ -77,6 +77,7 @@ final class TunerViewModel: ObservableObject {
     private var manualCandidateMIDI: Int?
     private var manualCandidateStreak = 0
     private let manualSwitchRequiredFrames = 4
+    private var isConductorRunning = false
     
     init(
         instrument: Instrument = InstrumentCatalog.guitar6,
@@ -103,15 +104,22 @@ final class TunerViewModel: ObservableObject {
     }
 
     deinit {
+        if isConductorRunning {
+            stopConductorHandler()
+        }
         cancellables.removeAll()
     }
     
     func start() {
+        guard !isConductorRunning else { return }
         startConductorHandler()
+        isConductorRunning = true
     }
     
     func stop() {
+        guard isConductorRunning else { return }
         stopConductorHandler()
+        isConductorRunning = false
     }
     
     func setTargetNote(_ note: Note?) {
