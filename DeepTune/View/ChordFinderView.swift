@@ -4,6 +4,8 @@ struct ChordFinderView: View {
     @ObservedObject var viewModel: TunerViewModel
     @Binding var isSessionActive: Bool
 
+    private let basicPitchAnalyzer = BasicPitchChordAnalyzer.shared
+
     private enum Phase {
         case idle
         case ready
@@ -100,6 +102,12 @@ struct ChordFinderView: View {
             Text("Tip: For best accuracy, let the chord ring for a short moment and avoid changing chords while WAIT is visible.")
                 .font(.footnote)
                 .foregroundColor(AppTheme.textSecondary)
+
+            if !basicPitchAnalyzer.isModelAvailable {
+                Text("ML model not found in bundle (nmp.mlpackage/mlmodelc). Running fallback detector.")
+                    .font(.caption2)
+                    .foregroundColor(AppTheme.warning)
+            }
         }
         .onChange(of: isSessionActive) { _, isActive in
             if isActive {
@@ -338,24 +346,38 @@ struct ChordFinderView: View {
 
         phase = .analyzing
         let capturedSamples = samples
+        let audioWindow = viewModel.recentAudioWindow(duration: 2.3)
         clearCaptureBuffer()
 
         analysisTask?.cancel()
-        analysisTask = Task { @MainActor in
+        analysisTask = Task {
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled else { return }
 
-            if let match = ChordIdentifier.identify(from: capturedSamples) {
-                lastResult = match
-            } else {
-                let observed = ChordIdentifier.observedNoteNames(from: capturedSamples)
-                lastResult = ChordMatch(name: "Unknown", confidence: 0.0, observedNoteNames: observed)
-            }
+            let modelResult: ChordDetectionResult? = {
+                guard let audioWindow else { return nil }
+                return basicPitchAnalyzer.analyze(audioWindow: audioWindow)
+            }()
 
-            if isSessionActive {
-                isSessionActive = false
-            } else {
-                phase = .idle
+            await MainActor.run {
+                if let modelResult {
+                    lastResult = ChordMatch(
+                        name: modelResult.name,
+                        confidence: modelResult.confidence,
+                        observedNoteNames: modelResult.observedNoteNames
+                    )
+                } else if let fallback = ChordIdentifier.identify(from: capturedSamples) {
+                    lastResult = fallback
+                } else {
+                    let observed = ChordIdentifier.observedNoteNames(from: capturedSamples)
+                    lastResult = ChordMatch(name: "Unknown", confidence: 0.0, observedNoteNames: observed)
+                }
+
+                if isSessionActive {
+                    isSessionActive = false
+                } else {
+                    phase = .idle
+                }
             }
         }
     }

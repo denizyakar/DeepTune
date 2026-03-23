@@ -10,6 +10,7 @@ private final class MockConductor: TunerConductorType {
     func start() {}
     func stop() {}
     func setTrackingTargetFrequency(_ frequency: Float?) {}
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
 
     func emit(pitch: Float, amplitude: Float) {}
 }

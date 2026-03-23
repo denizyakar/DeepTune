@@ -9,6 +9,11 @@ struct DetectedNote: Equatable {
     let centsFromEqualTempered: Float
 }
 
+struct AudioSampleWindow {
+    let samples: [Float]
+    let sampleRate: Double
+}
+
 enum TunerMode: Hashable {
     case auto
     case manual
@@ -53,6 +58,7 @@ final class TunerViewModel: ObservableObject {
     private let startConductorHandler: () -> Void
     private let stopConductorHandler: () -> Void
     private let setTrackingTargetFrequencyHandler: (Float?) -> Void
+    private let recentAudioWindowHandler: (TimeInterval) -> AudioSampleWindow?
     private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
@@ -92,6 +98,9 @@ final class TunerViewModel: ObservableObject {
         self.setTrackingTargetFrequencyHandler = { frequency in
             conductor.setTrackingTargetFrequency(frequency)
         }
+        self.recentAudioWindowHandler = { duration in
+            conductor.recentAudioWindow(duration: duration)
+        }
         
         conductorDataPublisher
             .receive(on: RunLoop.main)
@@ -120,6 +129,10 @@ final class TunerViewModel: ObservableObject {
         guard isConductorRunning else { return }
         stopConductorHandler()
         isConductorRunning = false
+    }
+
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
+        recentAudioWindowHandler(duration)
     }
     
     func setTargetNote(_ note: Note?) {
