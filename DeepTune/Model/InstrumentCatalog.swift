@@ -249,4 +249,9 @@ struct InstrumentCatalog {
     )
 
     static let allInstruments: [Instrument] = [guitar6, guitar7, bass4, ukulele4]
+
+    /// Instruments the user can actually choose. The 7-string is defined but
+    /// unfinished, so it stays out of the picker — and out of restored state,
+    /// which would otherwise put the app in a mode it offers no way to reach.
+    static let selectableInstruments: [Instrument] = allInstruments.filter { $0.type != .guitar7 }
 }

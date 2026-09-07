@@ -559,7 +559,7 @@ final class TunerViewModel: ObservableObject {
             return nil
         }
 
-        return InstrumentCatalog.allInstruments.first { $0.type == instrumentType }
+        return InstrumentCatalog.selectableInstruments.first { $0.type == instrumentType }
     }
 
     private static func restoreTuning(for instrument: Instrument, from userDefaults: UserDefaults) -> Tuning? {
