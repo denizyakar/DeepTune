@@ -22,8 +22,25 @@ struct ChordFinderView: View {
 
     struct ChordMatch {
         let name: String
+        let rootName: String
         let confidence: Double
         let observedNoteNames: [String]
+        let bassNoteName: String?
+        let candidates: [ChordSuggestion]
+    }
+
+    struct ChordSuggestion: Identifiable {
+        let id = UUID()
+        let name: String
+        let rootName: String
+        let confidence: Double
+    }
+
+    private struct SuggestionDisplayRow: Identifiable {
+        let id = UUID()
+        let title: String
+        let rootLine: String
+        let confidence: Double
     }
 
     @State private var phase: Phase = .idle
@@ -170,9 +187,41 @@ struct ChordFinderView: View {
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(AppTheme.textSecondary)
 
+                Text(primaryRootLine(for: lastResult))
+                    .font(.caption.weight(.semibold))
+                    .foregroundColor(AppTheme.textSecondary)
+
                 Text("Observed notes: \(lastResult.observedNoteNames.joined(separator: ", "))")
                     .font(.caption)
                     .foregroundColor(AppTheme.textSecondary)
+
+                if !lastResult.candidates.isEmpty {
+                    Divider()
+                        .overlay(AppTheme.stroke.opacity(0.45))
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Top Suggestions")
+                            .font(.caption.weight(.semibold))
+                            .foregroundColor(AppTheme.textTertiary)
+
+                        let rows = suggestionDisplayRows(from: lastResult)
+                        ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text("\(index + 1). \(row.title)")
+                                    .font(.subheadline.weight(index == 0 ? .bold : .semibold))
+                                    .foregroundColor(AppTheme.textPrimary)
+                                Spacer(minLength: 8)
+                                Text("\(Int((row.confidence * 100).rounded()))%")
+                                    .font(.caption.weight(.bold))
+                                    .foregroundColor(AppTheme.textSecondary)
+                            }
+
+                            Text(row.rootLine)
+                                .font(.caption2.weight(.semibold))
+                                .foregroundColor(AppTheme.textSecondary)
+                        }
+                    }
+                }
             } else {
                 Text("--")
                     .font(.system(size: 44, weight: .heavy, design: .rounded))
@@ -202,6 +251,66 @@ struct ChordFinderView: View {
             lastResult = nil
             isSessionActive = true
         }
+    }
+
+    private func primaryRootLine(for result: ChordMatch) -> String {
+        if let bass = result.bassNoteName {
+            return "Root: \(result.rootName) • Lowest note: \(bass)"
+        }
+        return "Root: \(result.rootName)"
+    }
+
+    private func uniqueCandidates(from result: ChordMatch) -> [ChordSuggestion] {
+        var unique: [ChordSuggestion] = []
+        for candidate in result.candidates {
+            if unique.contains(where: { $0.name == candidate.name }) {
+                continue
+            }
+            unique.append(candidate)
+        }
+        return unique
+    }
+
+    private func suggestionDisplayRows(from result: ChordMatch) -> [SuggestionDisplayRow] {
+        let candidates = Array(uniqueCandidates(from: result).prefix(5))
+        guard !candidates.isEmpty else { return [] }
+
+        var rows: [SuggestionDisplayRow] = []
+        var index = 0
+        while index < candidates.count {
+            let current = candidates[index]
+            if index + 1 < candidates.count {
+                let next = candidates[index + 1]
+                if shouldMergeAsOr(current: current, next: next) {
+                    rows.append(
+                        SuggestionDisplayRow(
+                            title: "\(current.name) or \(next.name)",
+                            rootLine: "Root: \(current.rootName) or \(next.rootName)",
+                            confidence: max(current.confidence, next.confidence)
+                        )
+                    )
+                    index += 2
+                    continue
+                }
+            }
+
+            rows.append(
+                SuggestionDisplayRow(
+                    title: current.name,
+                    rootLine: "Root: \(current.rootName)",
+                    confidence: current.confidence
+                )
+            )
+            index += 1
+        }
+
+        return rows
+    }
+
+    private func shouldMergeAsOr(current: ChordSuggestion, next: ChordSuggestion) -> Bool {
+        guard current.rootName != next.rootName else { return false }
+        let confidenceGap = abs(current.confidence - next.confidence)
+        return confidenceGap <= 0.04
     }
 
     private func beginListening() {
@@ -363,14 +472,30 @@ struct ChordFinderView: View {
                 if let modelResult {
                     lastResult = ChordMatch(
                         name: modelResult.name,
+                        rootName: modelResult.rootName,
                         confidence: modelResult.confidence,
-                        observedNoteNames: modelResult.observedNoteNames
+                        observedNoteNames: modelResult.observedNoteNames,
+                        bassNoteName: modelResult.bassNoteName,
+                        candidates: modelResult.candidates.map {
+                            ChordSuggestion(
+                                name: $0.name,
+                                rootName: $0.rootName,
+                                confidence: $0.confidence
+                            )
+                        }
                     )
                 } else if let fallback = ChordIdentifier.identify(from: capturedSamples) {
                     lastResult = fallback
                 } else {
                     let observed = ChordIdentifier.observedNoteNames(from: capturedSamples)
-                    lastResult = ChordMatch(name: "Unknown", confidence: 0.0, observedNoteNames: observed)
+                    lastResult = ChordMatch(
+                        name: "Unknown",
+                        rootName: "--",
+                        confidence: 0.0,
+                        observedNoteNames: observed,
+                        bassNoteName: nil,
+                        candidates: []
+                    )
                 }
 
                 if isSessionActive {
@@ -458,10 +583,32 @@ private enum ChordIdentifier {
         )
         guard confidence >= 0.26 else { return nil }
 
+        let primaryName = pitchClassNames[best.root] + best.suffix
+        let topMatches = Array(rankedMatches.prefix(5))
+        let candidates: [ChordFinderView.ChordSuggestion] = topMatches.map { match in
+            let delta = max(0.0, best.score - match.score)
+            let closeness = max(0.0, min(1.0, 1.0 - (delta / 6.0)))
+            let candidateConfidence = max(
+                0.08,
+                min(
+                    0.92,
+                    0.12 + (closeness * 0.46) + (match.matchedWeight / max(1.0, totalWeight) * 0.26)
+                )
+            )
+            return ChordFinderView.ChordSuggestion(
+                name: pitchClassNames[match.root] + match.suffix,
+                rootName: pitchClassNames[match.root],
+                confidence: candidateConfidence
+            )
+        }
+
         return ChordFinderView.ChordMatch(
-            name: pitchClassNames[best.root] + best.suffix,
+            name: primaryName,
+            rootName: pitchClassNames[best.root],
             confidence: confidence,
-            observedNoteNames: observedSet.sorted().map { pitchClassNames[$0] }
+            observedNoteNames: observedSet.sorted().map { pitchClassNames[$0] },
+            bassNoteName: nil,
+            candidates: candidates
         )
     }
 
