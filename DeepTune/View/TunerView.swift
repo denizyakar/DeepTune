@@ -71,7 +71,11 @@ struct TunerView: View {
         .onChange(of: permissionManager.isMicrophoneGranted) { _, _ in
             synchronizeAudioState()
         }
-        .onChange(of: scenePhase) { _, _ in
+        .onChange(of: scenePhase) { _, newPhase in
+            // The user may have granted access in Settings while the app was away.
+            if newPhase == .active {
+                permissionManager.refreshMicrophonePermission()
+            }
             synchronizeAudioState()
         }
         .onChange(of: isChordFinderSessionActive) { _, _ in
@@ -118,7 +122,7 @@ struct TunerView: View {
     }
 
     private func ensureMicrophonePermission() {
-        guard !permissionManager.isMicrophoneGranted else { return }
+        guard permissionManager.canRequestMicrophoneAccess else { return }
         permissionManager.requestMicrophonePermission { _ in
             synchronizeAudioState()
         }
@@ -378,7 +382,11 @@ struct TunerView: View {
 
                 HStack(spacing: 8) {
                     Button(action: {
-                        if !permissionManager.isMicrophoneGranted {
+                        // Never been asked: show the system prompt. Denied: only
+                        // Settings can help, so say that instead.
+                        if permissionManager.canRequestMicrophoneAccess {
+                            ensureMicrophonePermission()
+                        } else if !permissionManager.isMicrophoneGranted {
                             showPermissionAlert = true
                         }
                     }) {
