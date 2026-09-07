@@ -9,6 +9,11 @@ struct DetectedNote: Equatable {
     let centsFromEqualTempered: Float
 }
 
+struct AudioSampleWindow {
+    let samples: [Float]
+    let sampleRate: Double
+}
+
 enum TunerMode: Hashable {
     case auto
     case manual
@@ -63,7 +68,11 @@ final class TunerViewModel: ObservableObject {
     private let startConductorHandler: () -> Void
     private let stopConductorHandler: () -> Void
     private let setTrackingTargetFrequencyHandler: (Float?) -> Void
+
+    private let recentAudioWindowHandler: (TimeInterval) -> AudioSampleWindow?
+
     private let userDefaults: UserDefaults
+
     private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
@@ -88,6 +97,7 @@ final class TunerViewModel: ObservableObject {
     private var manualCandidateMIDI: Int?
     private var manualCandidateStreak = 0
     private let manualSwitchRequiredFrames = 4
+    private var isConductorRunning = false
     
     init(
         instrument: Instrument = InstrumentCatalog.guitar6,
@@ -108,6 +118,9 @@ final class TunerViewModel: ObservableObject {
         self.setTrackingTargetFrequencyHandler = { frequency in
             conductor.setTrackingTargetFrequency(frequency)
         }
+        self.recentAudioWindowHandler = { duration in
+            conductor.recentAudioWindow(duration: duration)
+        }
         
         conductorDataPublisher
             .receive(on: RunLoop.main)
@@ -122,15 +135,26 @@ final class TunerViewModel: ObservableObject {
     }
 
     deinit {
+        if isConductorRunning {
+            stopConductorHandler()
+        }
         cancellables.removeAll()
     }
     
     func start() {
+        guard !isConductorRunning else { return }
         startConductorHandler()
+        isConductorRunning = true
     }
     
     func stop() {
+        guard isConductorRunning else { return }
         stopConductorHandler()
+        isConductorRunning = false
+    }
+
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
+        recentAudioWindowHandler(duration)
     }
     
     func setTargetNote(_ note: Note?) {

@@ -9,6 +9,7 @@ protocol TunerConductorType: AnyObject {
     func start()
     func stop()
     func setTrackingTargetFrequency(_ frequency: Float?)
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow?
 }
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
@@ -63,6 +64,11 @@ class TunerConductor: ObservableObject, TunerConductorType {
     private var autoTrackingState: AutoTrackingState = .acquire
     private var acquireStableFrameCount = 0
     private var fineLockMissFrameCount = 0
+    private let recentAudioQueue = DispatchQueue(label: "DeepTune.TunerConductor.RecentAudio")
+    private var recentAudioSamples: [Float] = []
+    private var recentAudioSampleRate: Double = 44_100.0
+    private let maxRecentAudioDuration: TimeInterval = 8.0
+    private var isCaptureTapInstalled = false
 
     var dataPublisher: AnyPublisher<PitchData, Never> {
         $data.eraseToAnyPublisher()
@@ -105,6 +111,8 @@ class TunerConductor: ObservableObject, TunerConductorType {
                 self.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
             }
         }
+
+        installRecentAudioTapIfNeeded()
     }
     
     func start() {
@@ -128,6 +136,22 @@ class TunerConductor: ObservableObject, TunerConductorType {
         lastAcceptedPitch = 0.0
         lastAcceptedAt = nil
         resetAutoTrackingState()
+    }
+
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
+        recentAudioQueue.sync {
+            guard !recentAudioSamples.isEmpty, recentAudioSampleRate > 0 else { return nil }
+            let requestedFrameCount = max(1, Int(duration * recentAudioSampleRate))
+            let frameCount = min(requestedFrameCount, recentAudioSamples.count)
+            guard frameCount > 0 else { return nil }
+
+            let window = Array(recentAudioSamples.suffix(frameCount))
+            return AudioSampleWindow(samples: window, sampleRate: recentAudioSampleRate)
+        }
+    }
+
+    deinit {
+        removeRecentAudioTapIfNeeded()
     }
     
     private func update(pitch: Float, amp: Float) {
@@ -368,6 +392,51 @@ class TunerConductor: ObservableObject, TunerConductorType {
         }
         
         return autoSignalOffThreshold
+    }
+
+    private func installRecentAudioTapIfNeeded() {
+        let captureNode = tappableNodeC.avAudioNode
+        let bus: AVAudioNodeBus = 0
+        let format = captureNode.outputFormat(forBus: bus)
+
+        guard format.sampleRate > 0 else { return }
+        captureNode.installTap(onBus: bus, bufferSize: 2048, format: format) { [weak self] buffer, _ in
+            self?.appendRecentAudio(buffer)
+        }
+        isCaptureTapInstalled = true
+    }
+
+    private func removeRecentAudioTapIfNeeded() {
+        guard isCaptureTapInstalled else { return }
+        tappableNodeC.avAudioNode.removeTap(onBus: 0)
+        isCaptureTapInstalled = false
+    }
+
+    private func appendRecentAudio(_ buffer: AVAudioPCMBuffer) {
+        let frameLength = Int(buffer.frameLength)
+        guard frameLength > 0 else { return }
+
+        let samples: [Float]
+        if let floatChannelData = buffer.floatChannelData {
+            samples = Array(UnsafeBufferPointer(start: floatChannelData[0], count: frameLength))
+        } else if let int16ChannelData = buffer.int16ChannelData {
+            let source = UnsafeBufferPointer(start: int16ChannelData[0], count: frameLength)
+            samples = source.map { Float($0) / 32768.0 }
+        } else {
+            return
+        }
+
+        recentAudioQueue.async { [weak self] in
+            guard let self else { return }
+
+            self.recentAudioSampleRate = buffer.format.sampleRate
+            self.recentAudioSamples.append(contentsOf: samples)
+
+            let maxFrameCount = Int(self.maxRecentAudioDuration * self.recentAudioSampleRate)
+            if self.recentAudioSamples.count > maxFrameCount {
+                self.recentAudioSamples.removeFirst(self.recentAudioSamples.count - maxFrameCount)
+            }
+        }
     }
 }
 
