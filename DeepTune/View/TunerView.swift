@@ -131,6 +131,9 @@ struct TunerView: View {
         case .manual, .chord:
             viewModel.setActiveMode(.manual)
         }
+
+        // Only the chord finder reads the raw sample window.
+        viewModel.setRecentAudioCaptureEnabled(tab == .chord)
     }
 
     private var autoModeView: some View {
