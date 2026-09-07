@@ -6,6 +6,12 @@ struct ChordFinderView: View {
 
     private let basicPitchAnalyzer = BasicPitchChordAnalyzer.shared
 
+    private enum ModelStatus {
+        case loading
+        case ready
+        case unavailable
+    }
+
     private enum Phase {
         case idle
         case ready
@@ -54,6 +60,7 @@ struct ChordFinderView: View {
     @State private var listeningLoopTask: Task<Void, Never>?
     @State private var strongSignalStreak = 0
     @State private var sawQuietFrameInReady = false
+    @State private var modelStatus: ModelStatus = .loading
 
     private let listeningPollIntervalNanoseconds: UInt64 = 120_000_000
     private let repeatedMIDICooldown: TimeInterval = 0.08
@@ -120,11 +127,24 @@ struct ChordFinderView: View {
                 .font(.footnote)
                 .foregroundColor(AppTheme.textSecondary)
 
-            if !basicPitchAnalyzer.isModelAvailable {
+            switch modelStatus {
+            case .loading:
+                Text("Preparing chord model...")
+                    .font(.caption2)
+                    .foregroundColor(AppTheme.textTertiary)
+            case .unavailable:
                 Text("ML model not found in bundle (nmp.mlpackage/mlmodelc). Running fallback detector.")
                     .font(.caption2)
                     .foregroundColor(AppTheme.warning)
+            case .ready:
+                EmptyView()
             }
+        }
+        // Loading the CoreML model takes a noticeable moment; keep it off the main
+        // actor so switching to this tab does not stall the UI.
+        .task {
+            let isAvailable = await basicPitchAnalyzer.prepare()
+            modelStatus = isAvailable ? .ready : .unavailable
         }
         .onChange(of: isSessionActive) { _, isActive in
             if isActive {
@@ -463,9 +483,9 @@ struct ChordFinderView: View {
             try? await Task.sleep(nanoseconds: 220_000_000)
             guard !Task.isCancelled else { return }
 
-            let modelResult: ChordDetectionResult? = {
+            let modelResult: ChordDetectionResult? = await {
                 guard let audioWindow else { return nil }
-                return basicPitchAnalyzer.analyze(audioWindow: audioWindow)
+                return await basicPitchAnalyzer.analyze(audioWindow: audioWindow)
             }()
 
             await MainActor.run {
