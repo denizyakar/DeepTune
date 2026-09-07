@@ -73,21 +73,26 @@ class TunerConductor: ObservableObject, TunerConductorType {
     // Only the chord finder needs the raw sample window, so the capture tap stays
     // off while tuning: it would otherwise copy every buffer for nobody.
     private var isRecentAudioCaptureEnabled = false
+    // Whether the app wants audio running, as opposed to whether it currently is:
+    // an interruption stops the engine without changing the intent.
+    private var isRunningIntended = false
+    private var sessionObservers: [NSObjectProtocol] = []
 
     var dataPublisher: AnyPublisher<PitchData, Never> {
         $data.eraseToAnyPublisher()
     }
     
     init() {
-        // Essential for iOS/Simulator to allow microphone access
+        // The category has to be in place before `engine.input` is touched below,
+        // but activation is deliberately deferred to `start()`: activating here
+        // would claim the audio session at launch, before the user tunes anything.
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .mixWithOthers])
-            try session.setActive(true)
+            try AVAudioSession.sharedInstance()
+                .setCategory(.playAndRecord, options: [.defaultToSpeaker, .mixWithOthers])
         } catch {
-            print("Failed to set up AVAudioSession: \(error)")
+            print("Failed to configure AVAudioSession category: \(error)")
         }
-        
+
         // Simulators sometimes fail `engine.inputDevice`. Safe-fallback instead of fatalError.
         if let device = engine.inputDevice {
             initialDevice = device
@@ -118,10 +123,29 @@ class TunerConductor: ObservableObject, TunerConductorType {
                 self?.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
             }
         }
+
+        observeAudioSessionDisruptions()
     }
 
     func start() {
+        isRunningIntended = true
+        startEngine()
+    }
+
+    func stop() {
+        isRunningIntended = false
+        stopEngine()
+
+        // Politeness: `.mixWithOthers` means other audio may be playing, and
+        // deactivation can legitimately fail while it is.
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func startEngine() {
+        guard !isStarted else { return }
+
         do {
+            try AVAudioSession.sharedInstance().setActive(true)
             try engine.start()
             tracker.start()
             if isRecentAudioCaptureEnabled {
@@ -130,14 +154,70 @@ class TunerConductor: ObservableObject, TunerConductorType {
             isStarted = true
         } catch {
             print("AudioEngine could not start: \(error)")
+            isStarted = false
         }
     }
 
-    func stop() {
+    private func stopEngine() {
         removeRecentAudioTapIfNeeded()
         engine.stop()
         tracker.stop()
         isStarted = false
+    }
+
+    /// A phone call or an unplugged pair of headphones stops the engine underneath
+    /// us. Without this the tuner goes silently dead until the user leaves and
+    /// re-enters the screen.
+    private func observeAudioSessionDisruptions() {
+        let center = NotificationCenter.default
+
+        let interruptionObserver = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleInterruption(notification)
+        }
+
+        let routeChangeObserver = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleRouteChange()
+        }
+
+        sessionObservers = [interruptionObserver, routeChangeObserver]
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            // The system has already stopped the engine; just record that.
+            stopEngine()
+        case .ended:
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+            if options.contains(.shouldResume), isRunningIntended {
+                startEngine()
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange() {
+        guard isRunningIntended else { return }
+
+        // Restart on any route change: the engine's input node is bound to the
+        // previous route and stays silent otherwise.
+        stopEngine()
+        startEngine()
     }
 
     func setRecentAudioCaptureEnabled(_ enabled: Bool) {
@@ -177,6 +257,7 @@ class TunerConductor: ObservableObject, TunerConductorType {
     }
 
     deinit {
+        sessionObservers.forEach(NotificationCenter.default.removeObserver)
         removeRecentAudioTapIfNeeded()
     }
     
