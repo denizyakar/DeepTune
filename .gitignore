@@ -1,6 +1,10 @@
 # --- AI Tools & IDEs ---
+# Agent rules, decisions and local tooling config stay on the machine for now.
 .codex/
-.claude/settings.local.json
+.claude/
+CLAUDE.md
+claude-rules/
+.mcp.json
 .cursor/
 .cursorrules
 .windsurf/
