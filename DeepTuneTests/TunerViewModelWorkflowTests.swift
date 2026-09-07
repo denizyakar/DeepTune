@@ -17,11 +17,27 @@ private final class MockConductor: TunerConductorType {
 
 @MainActor
 final class TunerViewModelWorkflowTests: XCTestCase {
-    func testSwitchingInstrumentAndTuningUpdatesTargetNote() {
+    // TunerViewModel persists to UserDefaults on init, so every test needs its own
+    // suite: the default suite is the host app's, and tests would rewrite the user's
+    // saved instrument and leak state into each other.
+    private func makeIsolatedDefaults() throws -> UserDefaults {
+        let suiteName = "DeepTuneTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(
+            UserDefaults(suiteName: suiteName),
+            "Unable to create isolated UserDefaults suite"
+        )
+        addTeardownBlock {
+            defaults.removePersistentDomain(forName: suiteName)
+        }
+        return defaults
+    }
+
+    func testSwitchingInstrumentAndTuningUpdatesTargetNote() throws {
         let mockConductor = MockConductor()
         let viewModel = TunerViewModel(
             instrument: InstrumentCatalog.guitar6,
-            conductor: mockConductor
+            conductor: mockConductor,
+            userDefaults: try makeIsolatedDefaults()
         )
         let targetTuning = InstrumentCatalog.guitar7DropA
 
@@ -32,11 +48,12 @@ final class TunerViewModelWorkflowTests: XCTestCase {
         XCTAssertEqual(viewModel.targetNote?.fullName, targetTuning.notes.first?.fullName)
     }
 
-    func testManualSessionMetricsResetOnModeTransition() {
+    func testManualSessionMetricsResetOnModeTransition() throws {
         let mockConductor = MockConductor()
         let viewModel = TunerViewModel(
             instrument: InstrumentCatalog.guitar6,
-            conductor: mockConductor
+            conductor: mockConductor,
+            userDefaults: try makeIsolatedDefaults()
         )
         viewModel.setActiveMode(.manual)
         var timestamp = Date()
@@ -56,17 +73,8 @@ final class TunerViewModelWorkflowTests: XCTestCase {
         XCTAssertNil(viewModel.manualHighestFrequency)
     }
 
-    func testPersistedInstrumentTuningAndAutoProgressAreRestored() {
-        let suiteName = "DeepTuneTests.\(UUID().uuidString)"
-        guard let defaults = UserDefaults(suiteName: suiteName) else {
-            XCTFail("Unable to create isolated UserDefaults suite")
-            return
-        }
-
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-        }
-
+    func testPersistedInstrumentTuningAndAutoProgressAreRestored() throws {
+        let defaults = try makeIsolatedDefaults()
         let mockConductor = MockConductor()
         let firstSession = TunerViewModel(
             instrument: InstrumentCatalog.guitar6,
