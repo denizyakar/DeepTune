@@ -10,6 +10,7 @@ protocol TunerConductorType: AnyObject {
     func stop()
     func setTrackingTargetFrequency(_ frequency: Float?)
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow?
+    func setRecentAudioCaptureEnabled(_ enabled: Bool)
 }
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
@@ -65,10 +66,13 @@ class TunerConductor: ObservableObject, TunerConductorType {
     private var acquireStableFrameCount = 0
     private var fineLockMissFrameCount = 0
     private let recentAudioQueue = DispatchQueue(label: "DeepTune.TunerConductor.RecentAudio")
-    private var recentAudioSamples: [Float] = []
+    private var recentAudioBuffer: AudioRingBuffer?
     private var recentAudioSampleRate: Double = 44_100.0
     private let maxRecentAudioDuration: TimeInterval = 8.0
     private var isCaptureTapInstalled = false
+    // Only the chord finder needs the raw sample window, so the capture tap stays
+    // off while tuning: it would otherwise copy every buffer for nobody.
+    private var isRecentAudioCaptureEnabled = false
 
     var dataPublisher: AnyPublisher<PitchData, Never> {
         $data.eraseToAnyPublisher()
@@ -106,29 +110,50 @@ class TunerConductor: ObservableObject, TunerConductorType {
         silencer.volume = 0.0
         engine.output = silencer
         
-        tracker = PitchTap(mic) { pitch, amp in
+        // PitchTap retains this closure, and the tracker is stored on self, so a
+        // strong capture here would keep the conductor (and its audio engine)
+        // alive forever and stop deinit from ever removing the taps.
+        tracker = PitchTap(mic) { [weak self] pitch, amp in
             DispatchQueue.main.async {
-                self.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
+                self?.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
             }
         }
-
-        installRecentAudioTapIfNeeded()
     }
-    
+
     func start() {
         do {
             try engine.start()
             tracker.start()
+            if isRecentAudioCaptureEnabled {
+                installRecentAudioTapIfNeeded()
+            }
             isStarted = true
         } catch {
             print("AudioEngine could not start: \(error)")
         }
     }
-    
+
     func stop() {
+        removeRecentAudioTapIfNeeded()
         engine.stop()
         tracker.stop()
         isStarted = false
+    }
+
+    func setRecentAudioCaptureEnabled(_ enabled: Bool) {
+        guard isRecentAudioCaptureEnabled != enabled else { return }
+        isRecentAudioCaptureEnabled = enabled
+
+        if enabled {
+            if isStarted {
+                installRecentAudioTapIfNeeded()
+            }
+        } else {
+            removeRecentAudioTapIfNeeded()
+            recentAudioQueue.async { [weak self] in
+                self?.recentAudioBuffer?.removeAll()
+            }
+        }
     }
     
     func setTrackingTargetFrequency(_ frequency: Float?) {
@@ -140,12 +165,13 @@ class TunerConductor: ObservableObject, TunerConductorType {
 
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
         recentAudioQueue.sync {
-            guard !recentAudioSamples.isEmpty, recentAudioSampleRate > 0 else { return nil }
+            guard let recentAudioBuffer, !recentAudioBuffer.isEmpty, recentAudioSampleRate > 0 else {
+                return nil
+            }
             let requestedFrameCount = max(1, Int(duration * recentAudioSampleRate))
-            let frameCount = min(requestedFrameCount, recentAudioSamples.count)
-            guard frameCount > 0 else { return nil }
+            let window = recentAudioBuffer.lastSamples(requestedFrameCount)
+            guard !window.isEmpty else { return nil }
 
-            let window = Array(recentAudioSamples.suffix(frameCount))
             return AudioSampleWindow(samples: window, sampleRate: recentAudioSampleRate)
         }
     }
@@ -426,16 +452,17 @@ class TunerConductor: ObservableObject, TunerConductorType {
             return
         }
 
+        let sampleRate = buffer.format.sampleRate
         recentAudioQueue.async { [weak self] in
             guard let self else { return }
 
-            self.recentAudioSampleRate = buffer.format.sampleRate
-            self.recentAudioSamples.append(contentsOf: samples)
-
-            let maxFrameCount = Int(self.maxRecentAudioDuration * self.recentAudioSampleRate)
-            if self.recentAudioSamples.count > maxFrameCount {
-                self.recentAudioSamples.removeFirst(self.recentAudioSamples.count - maxFrameCount)
+            let capacity = max(1, Int(self.maxRecentAudioDuration * sampleRate))
+            if self.recentAudioBuffer == nil || self.recentAudioSampleRate != sampleRate {
+                self.recentAudioSampleRate = sampleRate
+                self.recentAudioBuffer = AudioRingBuffer(capacity: capacity)
             }
+
+            self.recentAudioBuffer?.append(samples)
         }
     }
 }
