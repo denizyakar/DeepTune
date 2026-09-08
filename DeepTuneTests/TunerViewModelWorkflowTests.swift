@@ -11,6 +11,7 @@ private final class MockConductor: TunerConductorType {
     func stop() {}
     func setTrackingTargetFrequency(_ frequency: Float?) {}
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
+    func setRecentAudioCaptureEnabled(_ enabled: Bool) {}
 
     func emit(pitch: Float, amplitude: Float) {}
 }
@@ -71,6 +72,31 @@ final class TunerViewModelWorkflowTests: XCTestCase {
 
         XCTAssertNil(viewModel.manualLowestFrequency)
         XCTAssertNil(viewModel.manualHighestFrequency)
+    }
+
+    func testUnselectableInstrumentIsNotRestored() throws {
+        let defaults = try makeIsolatedDefaults()
+        let mockConductor = MockConductor()
+
+        // The 7-string is unfinished and filtered out of the picker, so restoring
+        // it would strand the user in a mode the UI offers no way to reach.
+        let polluted = TunerViewModel(
+            instrument: InstrumentCatalog.guitar6,
+            conductor: mockConductor,
+            userDefaults: defaults
+        )
+        polluted.setInstrumentAndTuning(
+            instrument: InstrumentCatalog.guitar7,
+            tuning: InstrumentCatalog.guitar7DropA
+        )
+
+        let restored = TunerViewModel(
+            instrument: InstrumentCatalog.guitar6,
+            conductor: mockConductor,
+            userDefaults: defaults
+        )
+
+        XCTAssertEqual(restored.currentInstrument.type, .guitar6)
     }
 
     func testPersistedInstrumentTuningAndAutoProgressAreRestored() throws {

@@ -70,6 +70,7 @@ final class TunerViewModel: ObservableObject {
     private let setTrackingTargetFrequencyHandler: (Float?) -> Void
 
     private let recentAudioWindowHandler: (TimeInterval) -> AudioSampleWindow?
+    private let setRecentAudioCaptureEnabledHandler: (Bool) -> Void
 
     private let userDefaults: UserDefaults
 
@@ -121,6 +122,9 @@ final class TunerViewModel: ObservableObject {
         self.recentAudioWindowHandler = { duration in
             conductor.recentAudioWindow(duration: duration)
         }
+        self.setRecentAudioCaptureEnabledHandler = { enabled in
+            conductor.setRecentAudioCaptureEnabled(enabled)
+        }
         
         conductorDataPublisher
             .receive(on: RunLoop.main)
@@ -155,6 +159,10 @@ final class TunerViewModel: ObservableObject {
 
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
         recentAudioWindowHandler(duration)
+    }
+
+    func setRecentAudioCaptureEnabled(_ enabled: Bool) {
+        setRecentAudioCaptureEnabledHandler(enabled)
     }
     
     func setTargetNote(_ note: Note?) {
@@ -551,7 +559,7 @@ final class TunerViewModel: ObservableObject {
             return nil
         }
 
-        return InstrumentCatalog.allInstruments.first { $0.type == instrumentType }
+        return InstrumentCatalog.selectableInstruments.first { $0.type == instrumentType }
     }
 
     private static func restoreTuning(for instrument: Instrument, from userDefaults: UserDefaults) -> Tuning? {

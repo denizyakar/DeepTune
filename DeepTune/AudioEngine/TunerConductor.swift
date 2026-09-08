@@ -10,6 +10,7 @@ protocol TunerConductorType: AnyObject {
     func stop()
     func setTrackingTargetFrequency(_ frequency: Float?)
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow?
+    func setRecentAudioCaptureEnabled(_ enabled: Bool)
 }
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
@@ -65,25 +66,33 @@ class TunerConductor: ObservableObject, TunerConductorType {
     private var acquireStableFrameCount = 0
     private var fineLockMissFrameCount = 0
     private let recentAudioQueue = DispatchQueue(label: "DeepTune.TunerConductor.RecentAudio")
-    private var recentAudioSamples: [Float] = []
+    private var recentAudioBuffer: AudioRingBuffer?
     private var recentAudioSampleRate: Double = 44_100.0
     private let maxRecentAudioDuration: TimeInterval = 8.0
     private var isCaptureTapInstalled = false
+    // Only the chord finder needs the raw sample window, so the capture tap stays
+    // off while tuning: it would otherwise copy every buffer for nobody.
+    private var isRecentAudioCaptureEnabled = false
+    // Whether the app wants audio running, as opposed to whether it currently is:
+    // an interruption stops the engine without changing the intent.
+    private var isRunningIntended = false
+    private var sessionObservers: [NSObjectProtocol] = []
 
     var dataPublisher: AnyPublisher<PitchData, Never> {
         $data.eraseToAnyPublisher()
     }
     
     init() {
-        // Essential for iOS/Simulator to allow microphone access
+        // The category has to be in place before `engine.input` is touched below,
+        // but activation is deliberately deferred to `start()`: activating here
+        // would claim the audio session at launch, before the user tunes anything.
         do {
-            let session = AVAudioSession.sharedInstance()
-            try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .mixWithOthers])
-            try session.setActive(true)
+            try AVAudioSession.sharedInstance()
+                .setCategory(.playAndRecord, options: [.defaultToSpeaker, .mixWithOthers])
         } catch {
-            print("Failed to set up AVAudioSession: \(error)")
+            print("Failed to configure AVAudioSession category: \(error)")
         }
-        
+
         // Simulators sometimes fail `engine.inputDevice`. Safe-fallback instead of fatalError.
         if let device = engine.inputDevice {
             initialDevice = device
@@ -106,29 +115,125 @@ class TunerConductor: ObservableObject, TunerConductorType {
         silencer.volume = 0.0
         engine.output = silencer
         
-        tracker = PitchTap(mic) { pitch, amp in
+        // PitchTap retains this closure, and the tracker is stored on self, so a
+        // strong capture here would keep the conductor (and its audio engine)
+        // alive forever and stop deinit from ever removing the taps.
+        tracker = PitchTap(mic) { [weak self] pitch, amp in
             DispatchQueue.main.async {
-                self.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
+                self?.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
             }
         }
 
-        installRecentAudioTapIfNeeded()
+        observeAudioSessionDisruptions()
     }
-    
+
     func start() {
+        isRunningIntended = true
+        startEngine()
+    }
+
+    func stop() {
+        isRunningIntended = false
+        stopEngine()
+
+        // Politeness: `.mixWithOthers` means other audio may be playing, and
+        // deactivation can legitimately fail while it is.
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+    }
+
+    private func startEngine() {
+        guard !isStarted else { return }
+
         do {
+            try AVAudioSession.sharedInstance().setActive(true)
             try engine.start()
             tracker.start()
+            if isRecentAudioCaptureEnabled {
+                installRecentAudioTapIfNeeded()
+            }
             isStarted = true
         } catch {
             print("AudioEngine could not start: \(error)")
+            isStarted = false
         }
     }
-    
-    func stop() {
+
+    private func stopEngine() {
+        removeRecentAudioTapIfNeeded()
         engine.stop()
         tracker.stop()
         isStarted = false
+    }
+
+    /// A phone call or an unplugged pair of headphones stops the engine underneath
+    /// us. Without this the tuner goes silently dead until the user leaves and
+    /// re-enters the screen.
+    private func observeAudioSessionDisruptions() {
+        let center = NotificationCenter.default
+
+        let interruptionObserver = center.addObserver(
+            forName: AVAudioSession.interruptionNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] notification in
+            self?.handleInterruption(notification)
+        }
+
+        let routeChangeObserver = center.addObserver(
+            forName: AVAudioSession.routeChangeNotification,
+            object: AVAudioSession.sharedInstance(),
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleRouteChange()
+        }
+
+        sessionObservers = [interruptionObserver, routeChangeObserver]
+    }
+
+    private func handleInterruption(_ notification: Notification) {
+        guard let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt,
+              let type = AVAudioSession.InterruptionType(rawValue: rawType) else {
+            return
+        }
+
+        switch type {
+        case .began:
+            // The system has already stopped the engine; just record that.
+            stopEngine()
+        case .ended:
+            let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+            let options = AVAudioSession.InterruptionOptions(rawValue: rawOptions)
+            if options.contains(.shouldResume), isRunningIntended {
+                startEngine()
+            }
+        @unknown default:
+            break
+        }
+    }
+
+    private func handleRouteChange() {
+        guard isRunningIntended else { return }
+
+        // Restart on any route change: the engine's input node is bound to the
+        // previous route and stays silent otherwise.
+        stopEngine()
+        startEngine()
+    }
+
+    func setRecentAudioCaptureEnabled(_ enabled: Bool) {
+        guard isRecentAudioCaptureEnabled != enabled else { return }
+        isRecentAudioCaptureEnabled = enabled
+
+        if enabled {
+            if isStarted {
+                installRecentAudioTapIfNeeded()
+            }
+        } else {
+            removeRecentAudioTapIfNeeded()
+            recentAudioQueue.async { [weak self] in
+                self?.recentAudioBuffer?.removeAll()
+            }
+        }
     }
     
     func setTrackingTargetFrequency(_ frequency: Float?) {
@@ -140,17 +245,19 @@ class TunerConductor: ObservableObject, TunerConductorType {
 
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
         recentAudioQueue.sync {
-            guard !recentAudioSamples.isEmpty, recentAudioSampleRate > 0 else { return nil }
+            guard let recentAudioBuffer, !recentAudioBuffer.isEmpty, recentAudioSampleRate > 0 else {
+                return nil
+            }
             let requestedFrameCount = max(1, Int(duration * recentAudioSampleRate))
-            let frameCount = min(requestedFrameCount, recentAudioSamples.count)
-            guard frameCount > 0 else { return nil }
+            let window = recentAudioBuffer.lastSamples(requestedFrameCount)
+            guard !window.isEmpty else { return nil }
 
-            let window = Array(recentAudioSamples.suffix(frameCount))
             return AudioSampleWindow(samples: window, sampleRate: recentAudioSampleRate)
         }
     }
 
     deinit {
+        sessionObservers.forEach(NotificationCenter.default.removeObserver)
         removeRecentAudioTapIfNeeded()
     }
     
@@ -426,16 +533,17 @@ class TunerConductor: ObservableObject, TunerConductorType {
             return
         }
 
+        let sampleRate = buffer.format.sampleRate
         recentAudioQueue.async { [weak self] in
             guard let self else { return }
 
-            self.recentAudioSampleRate = buffer.format.sampleRate
-            self.recentAudioSamples.append(contentsOf: samples)
-
-            let maxFrameCount = Int(self.maxRecentAudioDuration * self.recentAudioSampleRate)
-            if self.recentAudioSamples.count > maxFrameCount {
-                self.recentAudioSamples.removeFirst(self.recentAudioSamples.count - maxFrameCount)
+            let capacity = max(1, Int(self.maxRecentAudioDuration * sampleRate))
+            if self.recentAudioBuffer == nil || self.recentAudioSampleRate != sampleRate {
+                self.recentAudioSampleRate = sampleRate
+                self.recentAudioBuffer = AudioRingBuffer(capacity: capacity)
             }
+
+            self.recentAudioBuffer?.append(samples)
         }
     }
 }

@@ -32,7 +32,7 @@ struct InstrumentPickerView: View {
     }
 
     private var selectableInstruments: [Instrument] {
-        InstrumentCatalog.allInstruments.filter { $0.type != .guitar7 }
+        InstrumentCatalog.selectableInstruments
     }
 
     private func instrumentRow(_ instrument: Instrument) -> some View {

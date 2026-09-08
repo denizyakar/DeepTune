@@ -18,7 +18,10 @@ struct ChordDetectionCandidate {
     let expectedCoverage: Double
 }
 
-final class BasicPitchChordAnalyzer {
+/// Actor-isolated because the model is loaded lazily and then read from several
+/// contexts. A `lazy var` would race here: the view asks whether the model is
+/// available while an analysis task may already be loading it.
+actor BasicPitchChordAnalyzer {
     static let shared = BasicPitchChordAnalyzer()
 
     private struct ChordTemplate {
@@ -64,17 +67,26 @@ final class BasicPitchChordAnalyzer {
         ChordTemplate(suffix: "m7b5", intervals: [0, 3, 6, 10], rarityWeight: 0.16)
     ]
 
-    private lazy var model: MLModel? = {
-        Self.loadModel()
-    }()
-
-    var isModelAvailable: Bool {
-        model != nil
-    }
+    private var model: MLModel?
+    private var didAttemptLoad = false
 
     private init() {}
 
+    /// Loads the model if it has not been loaded yet and reports whether it is
+    /// usable. Loading takes a noticeable moment, so callers should await this
+    /// off the main actor (e.g. from `task()`) instead of reading it while a
+    /// view body is being evaluated.
+    @discardableResult
+    func prepare() -> Bool {
+        if !didAttemptLoad {
+            didAttemptLoad = true
+            model = Self.loadModel()
+        }
+        return model != nil
+    }
+
     func analyze(audioWindow: AudioSampleWindow) -> ChordDetectionResult? {
+        prepare()
         guard let model else { return nil }
 
         guard let preparedSamples = prepareAudioInput(
