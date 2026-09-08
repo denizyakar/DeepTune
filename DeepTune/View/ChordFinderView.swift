@@ -5,7 +5,6 @@ struct ChordFinderView: View {
     @Binding var isSessionActive: Bool
 
     @State private var model: ChordFinderViewModel
-    @State private var listeningLoopTask: Task<Void, Never>?
 
     init(viewModel: TunerViewModel, isSessionActive: Binding<Bool>) {
         self.viewModel = viewModel
@@ -94,30 +93,17 @@ struct ChordFinderView: View {
             model.onRequestSessionEnd = { isSessionActive = false }
             await model.prepareModel()
         }
-        .onChange(of: isSessionActive) { _, isActive in
-            if isActive {
-                model.beginListening()
-                startListeningLoop()
-            } else {
-                stopListeningLoop()
-                model.stopListening()
-            }
+        // Tying the loop to task(id:) means SwiftUI cancels it when the session ends
+        // or the view goes away — no Task handle to hold, cancel and forget to clear.
+        .task(id: isSessionActive) {
+            guard isSessionActive else { return }
+            model.beginListening()
+            defer { model.stopListening() }
+            await model.runListeningLoop()
         }
         .onDisappear {
             isSessionActive = false
-            stopListeningLoop()
-            model.stopListening()
         }
-    }
-
-    private func startListeningLoop() {
-        listeningLoopTask?.cancel()
-        listeningLoopTask = Task { await model.runListeningLoop() }
-    }
-
-    private func stopListeningLoop() {
-        listeningLoopTask?.cancel()
-        listeningLoopTask = nil
     }
 
     private var statusBadge: some View {
