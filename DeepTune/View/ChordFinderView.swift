@@ -4,42 +4,13 @@ struct ChordFinderView: View {
     @ObservedObject var viewModel: TunerViewModel
     @Binding var isSessionActive: Bool
 
-    private let basicPitchAnalyzer = BasicPitchChordAnalyzer.shared
+    @State private var model: ChordFinderViewModel
+    @State private var listeningLoopTask: Task<Void, Never>?
 
-    private enum ModelStatus {
-        case loading
-        case ready
-        case unavailable
-    }
-
-    private enum Phase {
-        case idle
-        case ready
-        case capturing
-        case analyzing
-    }
-
-    struct NoteSample: Identifiable {
-        let id = UUID()
-        let pitchClass: Int
-        let midiNumber: Int
-        let timestamp: Date
-    }
-
-    struct ChordMatch {
-        let name: String
-        let rootName: String
-        let confidence: Double
-        let observedNoteNames: [String]
-        let bassNoteName: String?
-        let candidates: [ChordSuggestion]
-    }
-
-    struct ChordSuggestion: Identifiable {
-        let id = UUID()
-        let name: String
-        let rootName: String
-        let confidence: Double
+    init(viewModel: TunerViewModel, isSessionActive: Binding<Bool>) {
+        self.viewModel = viewModel
+        self._isSessionActive = isSessionActive
+        self._model = State(initialValue: ChordFinderViewModel(audioSource: viewModel))
     }
 
     private struct SuggestionDisplayRow: Identifiable {
@@ -48,29 +19,6 @@ struct ChordFinderView: View {
         let rootLine: String
         let confidence: Double
     }
-
-    @State private var phase: Phase = .idle
-    @State private var samples: [NoteSample] = []
-    @State private var lastResult: ChordMatch?
-    @State private var lastAcceptedMIDI: Int?
-    @State private var lastAcceptedAt: Date?
-    @State private var captureStartedAt: Date?
-    @State private var lastStrongSignalAt: Date?
-    @State private var analysisTask: Task<Void, Never>?
-    @State private var listeningLoopTask: Task<Void, Never>?
-    @State private var strongSignalStreak = 0
-    @State private var sawQuietFrameInReady = false
-    @State private var modelStatus: ModelStatus = .loading
-
-    private let listeningPollIntervalNanoseconds: UInt64 = 120_000_000
-    private let repeatedMIDICooldown: TimeInterval = 0.08
-    private let captureStartAmplitudeThreshold: Float = 0.020
-    private let captureSustainAmplitudeThreshold: Float = 0.011
-    private let onsetRequiredFrames = 2
-    private let minimumCaptureDuration: TimeInterval = 0.45
-    private let releaseSilenceBeforeAnalyze: TimeInterval = 0.32
-    private let maximumCaptureDuration: TimeInterval = 2.20
-    private let minimumSamplesForAnalysis = 5
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -98,19 +46,19 @@ struct ChordFinderView: View {
                 statusBadge
             }
 
-            if phase == .capturing {
-                Text("Captured: \(samples.count)")
+            if model.phase == .capturing {
+                Text("Captured: \(model.samples.count)")
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(AppTheme.textSecondary)
             }
 
-            if phase == .ready {
+            if model.phase == .ready {
                 Text("Ready: play one chord now")
                     .font(.caption2.weight(.semibold))
                     .foregroundColor(AppTheme.textSecondary)
             }
 
-            if phase == .analyzing {
+            if model.phase == .analyzing {
                 HStack(spacing: 8) {
                     ProgressView()
                         .progressViewStyle(.circular)
@@ -127,7 +75,7 @@ struct ChordFinderView: View {
                 .font(.footnote)
                 .foregroundColor(AppTheme.textSecondary)
 
-            switch modelStatus {
+            switch model.modelStatus {
             case .loading:
                 Text("Preparing chord model...")
                     .font(.caption2)
@@ -143,27 +91,40 @@ struct ChordFinderView: View {
         // Loading the CoreML model takes a noticeable moment; keep it off the main
         // actor so switching to this tab does not stall the UI.
         .task {
-            let isAvailable = await basicPitchAnalyzer.prepare()
-            modelStatus = isAvailable ? .ready : .unavailable
+            model.onRequestSessionEnd = { isSessionActive = false }
+            await model.prepareModel()
         }
         .onChange(of: isSessionActive) { _, isActive in
             if isActive {
-                beginListening()
+                model.beginListening()
+                startListeningLoop()
             } else {
-                stopListening()
+                stopListeningLoop()
+                model.stopListening()
             }
         }
         .onDisappear {
             isSessionActive = false
-            stopListening()
+            stopListeningLoop()
+            model.stopListening()
         }
+    }
+
+    private func startListeningLoop() {
+        listeningLoopTask?.cancel()
+        listeningLoopTask = Task { await model.runListeningLoop() }
+    }
+
+    private func stopListeningLoop() {
+        listeningLoopTask?.cancel()
+        listeningLoopTask = nil
     }
 
     private var statusBadge: some View {
         let label: String
         let color: Color
 
-        switch phase {
+        switch model.phase {
         case .idle:
             label = "Idle"
             color = AppTheme.textTertiary
@@ -198,7 +159,7 @@ struct ChordFinderView: View {
                 .font(.caption.weight(.semibold))
                 .foregroundColor(AppTheme.textTertiary)
 
-            if let lastResult {
+            if let lastResult = model.lastResult {
                 Text(lastResult.name)
                     .font(.system(size: 44, weight: .heavy, design: .rounded))
                     .foregroundColor(AppTheme.textPrimary)
@@ -224,7 +185,7 @@ struct ChordFinderView: View {
                             .font(.caption.weight(.semibold))
                             .foregroundColor(AppTheme.textTertiary)
 
-                        let rows = suggestionDisplayRows(from: lastResult)
+                        let rows = suggestionDisplayRows(for: lastResult)
                         ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                             HStack(alignment: .firstTextBaseline) {
                                 Text("\(index + 1). \(row.title)")
@@ -268,20 +229,20 @@ struct ChordFinderView: View {
         if isSessionActive {
             isSessionActive = false
         } else {
-            lastResult = nil
+            model.clearLastResult()
             isSessionActive = true
         }
     }
 
-    private func primaryRootLine(for result: ChordMatch) -> String {
+    private func primaryRootLine(for result: ChordFinderViewModel.ChordMatch) -> String {
         if let bass = result.bassNoteName {
             return "Root: \(result.rootName) • Lowest note: \(bass)"
         }
         return "Root: \(result.rootName)"
     }
 
-    private func uniqueCandidates(from result: ChordMatch) -> [ChordSuggestion] {
-        var unique: [ChordSuggestion] = []
+    private func uniqueCandidates(for result: ChordFinderViewModel.ChordMatch) -> [ChordFinderViewModel.ChordSuggestion] {
+        var unique: [ChordFinderViewModel.ChordSuggestion] = []
         for candidate in result.candidates {
             if unique.contains(where: { $0.name == candidate.name }) {
                 continue
@@ -291,8 +252,8 @@ struct ChordFinderView: View {
         return unique
     }
 
-    private func suggestionDisplayRows(from result: ChordMatch) -> [SuggestionDisplayRow] {
-        let candidates = Array(uniqueCandidates(from: result).prefix(5))
+    private func suggestionDisplayRows(for result: ChordFinderViewModel.ChordMatch) -> [SuggestionDisplayRow] {
+        let candidates = Array(uniqueCandidates(for: result).prefix(5))
         guard !candidates.isEmpty else { return [] }
 
         var rows: [SuggestionDisplayRow] = []
@@ -327,222 +288,12 @@ struct ChordFinderView: View {
         return rows
     }
 
-    private func shouldMergeAsOr(current: ChordSuggestion, next: ChordSuggestion) -> Bool {
+    private func shouldMergeAsOr(
+        current: ChordFinderViewModel.ChordSuggestion,
+        next: ChordFinderViewModel.ChordSuggestion
+    ) -> Bool {
         guard current.rootName != next.rootName else { return false }
         let confidenceGap = abs(current.confidence - next.confidence)
         return confidenceGap <= 0.04
-    }
-
-    private func beginListening() {
-        phase = .ready
-        clearCaptureBuffer()
-        strongSignalStreak = 0
-        sawQuietFrameInReady = false
-        startListeningLoop()
-    }
-
-    private func stopListening() {
-        listeningLoopTask?.cancel()
-        listeningLoopTask = nil
-        analysisTask?.cancel()
-        analysisTask = nil
-        phase = .idle
-        strongSignalStreak = 0
-        sawQuietFrameInReady = false
-        clearCaptureBuffer()
-    }
-
-    private func startListeningLoop() {
-        listeningLoopTask?.cancel()
-        listeningLoopTask = Task { @MainActor in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: listeningPollIntervalNanoseconds)
-                guard !Task.isCancelled else { break }
-                let now = Date()
-                processListeningTick(now: now)
-            }
-        }
-    }
-
-    private func processListeningTick(now: Date) {
-        switch phase {
-        case .idle, .analyzing:
-            return
-        case .ready:
-            if !isStartSignalFrame {
-                sawQuietFrameInReady = true
-                strongSignalStreak = 0
-                return
-            }
-
-            guard sawQuietFrameInReady else { return }
-            strongSignalStreak += 1
-            guard strongSignalStreak >= onsetRequiredFrames else { return }
-            strongSignalStreak = 0
-            sawQuietFrameInReady = false
-            startCaptureCycle(now: now)
-            captureSampleIfNeeded(now: now)
-        case .capturing:
-            if isSustainSignalFrame {
-                lastStrongSignalAt = now
-                captureSampleIfNeeded(now: now)
-            }
-
-            guard let captureStartedAt else { return }
-            let elapsed = now.timeIntervalSince(captureStartedAt)
-            if elapsed >= maximumCaptureDuration {
-                finalizeCapture()
-                return
-            }
-
-            guard elapsed >= minimumCaptureDuration else { return }
-            guard let lastStrongSignalAt else { return }
-            if now.timeIntervalSince(lastStrongSignalAt) >= releaseSilenceBeforeAnalyze {
-                finalizeCapture()
-            }
-        }
-    }
-
-    private var isStartSignalFrame: Bool {
-        viewModel.currentAmplitude >= captureStartAmplitudeThreshold
-            && viewModel.isSignalDetected
-            && viewModel.detectedNote != nil
-    }
-
-    private var isSustainSignalFrame: Bool {
-        viewModel.currentAmplitude >= captureSustainAmplitudeThreshold
-            && viewModel.isSignalDetected
-            && viewModel.detectedNote != nil
-    }
-
-    private func startCaptureCycle(now: Date) {
-        clearCaptureBuffer()
-        captureStartedAt = now
-        lastStrongSignalAt = now
-        phase = .capturing
-    }
-
-    private func finalizeCapture() {
-        let sampleCount = samples.count
-        guard sampleCount >= minimumSamplesForAnalysis else {
-            phase = .ready
-            clearCaptureBuffer()
-            return
-        }
-
-        analyzeCurrentChord()
-    }
-
-    private func clearCaptureBuffer() {
-        samples.removeAll()
-        lastAcceptedMIDI = nil
-        lastAcceptedAt = nil
-        captureStartedAt = nil
-        lastStrongSignalAt = nil
-    }
-
-    private func captureSampleIfNeeded(now: Date) {
-        guard isSessionActive, phase == .capturing,
-              let detectedNote = viewModel.detectedNote else {
-            return
-        }
-
-        if let lastAcceptedMIDI,
-           let lastAcceptedAt,
-           lastAcceptedMIDI == detectedNote.midiNumber,
-           now.timeIntervalSince(lastAcceptedAt) < repeatedMIDICooldown {
-            return
-        }
-
-        samples.append(
-            NoteSample(
-                pitchClass: ((detectedNote.midiNumber % 12) + 12) % 12,
-                midiNumber: detectedNote.midiNumber,
-                timestamp: now
-            )
-        )
-
-        if samples.count > 80 {
-            samples.removeFirst(samples.count - 80)
-        }
-
-        lastAcceptedMIDI = detectedNote.midiNumber
-        lastAcceptedAt = now
-    }
-
-    private static func pitchClassCounts(from samples: [NoteSample]) -> [Int: Int] {
-        samples.reduce(into: [Int: Int]()) { partial, sample in
-            partial[sample.pitchClass, default: 0] += 1
-        }
-    }
-
-    private func analyzeCurrentChord() {
-        guard phase == .capturing else { return }
-
-        phase = .analyzing
-        let capturedCounts = Self.pitchClassCounts(from: samples)
-        let audioWindow = viewModel.recentAudioWindow(duration: 2.3)
-        clearCaptureBuffer()
-
-        analysisTask?.cancel()
-        analysisTask = Task {
-            try? await Task.sleep(nanoseconds: 220_000_000)
-            guard !Task.isCancelled else { return }
-
-            let modelResult: ChordDetectionResult? = await {
-                guard let audioWindow else { return nil }
-                return await basicPitchAnalyzer.analyze(audioWindow: audioWindow)
-            }()
-
-            await MainActor.run {
-                if let modelResult {
-                    lastResult = ChordMatch(
-                        name: modelResult.name,
-                        rootName: modelResult.rootName,
-                        confidence: modelResult.confidence,
-                        observedNoteNames: modelResult.observedNoteNames,
-                        bassNoteName: modelResult.bassNoteName,
-                        candidates: modelResult.candidates.map {
-                            ChordSuggestion(
-                                name: $0.name,
-                                rootName: $0.rootName,
-                                confidence: $0.confidence
-                            )
-                        }
-                    )
-                } else if let fallback = ChordIdentifier.identify(pitchClassCounts: capturedCounts) {
-                    lastResult = ChordMatch(
-                        name: fallback.name,
-                        rootName: fallback.rootName,
-                        confidence: fallback.confidence,
-                        observedNoteNames: fallback.observedNoteNames,
-                        bassNoteName: nil,
-                        candidates: fallback.candidates.map {
-                            ChordSuggestion(
-                                name: $0.name,
-                                rootName: $0.rootName,
-                                confidence: $0.confidence
-                            )
-                        }
-                    )
-                } else {
-                    let observed = ChordIdentifier.observedNoteNames(pitchClassCounts: capturedCounts)
-                    lastResult = ChordMatch(
-                        name: "Unknown",
-                        rootName: "--",
-                        confidence: 0.0,
-                        observedNoteNames: observed,
-                        bassNoteName: nil,
-                        candidates: []
-                    )
-                }
-
-                if isSessionActive {
-                    isSessionActive = false
-                } else {
-                    phase = .idle
-                }
-            }
-        }
     }
 }
