@@ -1,16 +1,22 @@
 # --- AI Tools & IDEs ---
+# Agent rules, decisions and local tooling config stay on the machine for now.
 .codex/
+.claude/
+CLAUDE.md
+claude-rules/
+.mcp.json
 .cursor/
 .cursorrules
 .windsurf/
 .windsurfrules
 .antigravity/
-/codex-rules/
+
 
 # --- macOS System Files ---
 .DS_Store
 .AppleDouble
 .LSOverride
+error.log
 
 # --- Xcode ---
 build/
