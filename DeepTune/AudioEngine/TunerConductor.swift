@@ -1,5 +1,6 @@
 import Foundation
 import AVFoundation
+import OSLog
 import AudioKit
 import SoundpipeAudioKit
 
@@ -11,6 +12,8 @@ protocol TunerConductorType: AnyObject {
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow?
     func setRecentAudioCaptureEnabled(_ enabled: Bool)
 }
+
+nonisolated private let logger = Logger(subsystem: Bundle.main.bundleIdentifier ?? "DeepTune", category: "audio")
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
 class TunerConductor: TunerConductorType {
@@ -100,14 +103,14 @@ class TunerConductor: TunerConductorType {
             try AVAudioSession.sharedInstance()
                 .setCategory(.playAndRecord, options: [.defaultToSpeaker, .mixWithOthers])
         } catch {
-            print("Failed to configure AVAudioSession category: \(error)")
+            logger.error("Failed to configure AVAudioSession category: \(error, privacy: .public)")
         }
 
         // Simulators sometimes fail `engine.inputDevice`. Safe-fallback instead of fatalError.
         if let device = engine.inputDevice {
             initialDevice = device
         } else {
-            print("Warning: Could not find input device. This is normal on Simulators.")
+            logger.notice("No input device found; expected on Simulator")
             // Use a dummy device or skip assignment if Optional.
             // In AudioKit, if inputDevice is nil, it just uses the default route.
             initialDevice = Device(name: "Simulator Device", deviceID: "SimID")
@@ -162,7 +165,7 @@ class TunerConductor: TunerConductorType {
             }
             isStarted = true
         } catch {
-            print("AudioEngine could not start: \(error)")
+            logger.error("AudioEngine could not start: \(error, privacy: .public)")
             isStarted = false
         }
     }
