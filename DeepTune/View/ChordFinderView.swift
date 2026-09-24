@@ -1,19 +1,22 @@
 import SwiftUI
 
 struct ChordFinderView: View {
-    @ObservedObject var viewModel: TunerViewModel
     @Binding var isSessionActive: Bool
 
     @State private var model: ChordFinderViewModel
 
+    // The tuner view model is only needed to build the chord finder's own model.
+    // Storing it as @ObservedObject would re-render this view on every audio frame
+    // even though the body never reads it.
     init(viewModel: TunerViewModel, isSessionActive: Binding<Bool>) {
-        self.viewModel = viewModel
         self._isSessionActive = isSessionActive
         self._model = State(initialValue: ChordFinderViewModel(audioSource: viewModel))
     }
 
     private struct SuggestionDisplayRow: Identifiable {
-        let id = UUID()
+        // Stable across renders so ForEach keeps its rows. Titles are unique because
+        // candidates are de-duplicated by name before rows are built.
+        var id: String { title }
         let title: String
         let rootLine: String
         let confidence: Double
