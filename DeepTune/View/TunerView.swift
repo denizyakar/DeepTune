@@ -10,8 +10,8 @@ struct TunerView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
-    @StateObject private var viewModel: TunerViewModel
-    @StateObject private var permissionManager: PermissionManager
+    @State private var viewModel: TunerViewModel
+    @State private var permissionManager: PermissionManager
 
     @State private var showSettings = false
     @State private var showInstrumentPicker = false
@@ -21,8 +21,10 @@ struct TunerView: View {
     @State private var isChordFinderSessionActive = false
 
     init(initialInstrument: Instrument = InstrumentCatalog.guitar6) {
-        _viewModel = StateObject(wrappedValue: TunerViewModel(instrument: initialInstrument))
-        _permissionManager = StateObject(wrappedValue: PermissionManager())
+        // Unlike StateObject, State builds these eagerly on every init. That is fine
+        // only because TunerView is the root screen and its parent never re-renders.
+        _viewModel = State(initialValue: TunerViewModel(instrument: initialInstrument))
+        _permissionManager = State(initialValue: PermissionManager())
     }
 
     var body: some View {

@@ -3,7 +3,6 @@ import Observation
 
 /// The slice of the tuner the chord finder actually reads. Narrowing it to this
 /// lets the capture state machine be driven by a fake in tests.
-@MainActor
 protocol ChordFinderAudioSource: AnyObject {
     var currentAmplitude: Float { get }
     var isSignalDetected: Bool { get }
@@ -13,7 +12,6 @@ protocol ChordFinderAudioSource: AnyObject {
 
 extension TunerViewModel: ChordFinderAudioSource {}
 
-@MainActor
 @Observable
 final class ChordFinderViewModel {
     enum Phase {

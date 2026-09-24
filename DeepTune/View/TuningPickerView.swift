@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct TuningPickerView: View {
-    @ObservedObject var viewModel: TunerViewModel
+    let viewModel: TunerViewModel
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {

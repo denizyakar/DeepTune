@@ -1,6 +1,6 @@
 import Foundation
 import AVFoundation
-import Combine
+import Observation
 
 enum MicrophonePermission {
     /// The system prompt has not been shown yet — asking is still possible.
@@ -10,9 +10,9 @@ enum MicrophonePermission {
     case granted
 }
 
-@MainActor
-final class PermissionManager: ObservableObject {
-    @Published private(set) var microphonePermission: MicrophonePermission = .undetermined
+@Observable
+final class PermissionManager {
+    private(set) var microphonePermission: MicrophonePermission = .undetermined
 
     var isMicrophoneGranted: Bool { microphonePermission == .granted }
 

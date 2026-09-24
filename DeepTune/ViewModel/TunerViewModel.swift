@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import Observation
 
 struct DetectedNote: Equatable {
     let name: String
@@ -19,41 +20,42 @@ enum TunerMode: Hashable {
     case manual
 }
 
-final class TunerViewModel: ObservableObject {
+@Observable
+final class TunerViewModel {
     private enum PersistenceKey {
         static let instrumentType = "DeepTune.selectedInstrumentType"
         static let tuningSignature = "DeepTune.selectedTuningSignature"
         static let autoProgressEnabled = "DeepTune.autoProgressEnabled"
     }
 
-    @Published var currentInstrument: Instrument
-    @Published var currentTuning: Tuning
+    var currentInstrument: Instrument
+    var currentTuning: Tuning
     
     // Raw values coming from the audio layer.
-    @Published var currentPitch: Float = 0.0
-    @Published var currentAmplitude: Float = 0.0
-    @Published var isSignalDetected: Bool = false
-    @Published var isTargetSignalDetected: Bool = false
-    @Published var hasPitchReference: Bool = false
+    var currentPitch: Float = 0.0
+    var currentAmplitude: Float = 0.0
+    var isSignalDetected: Bool = false
+    var isTargetSignalDetected: Bool = false
+    var hasPitchReference: Bool = false
     
     // Auto mode output (target-string based).
-    @Published var autoCentsDistance: Float = 0.0
-    @Published var targetNote: Note?
-    @Published var isAutoProgressEnabled: Bool = false {
+    var autoCentsDistance: Float = 0.0
+    var targetNote: Note?
+    var isAutoProgressEnabled: Bool = false {
         didSet {
             persistAutoProgressState()
         }
     }
-    @Published var isTuningSuccessful: Bool = false
-    @Published var inTuneDuration: Double = 0.0
-    @Published private(set) var completedNoteIDs = Set<UUID>()
+    var isTuningSuccessful: Bool = false
+    var inTuneDuration: Double = 0.0
+    private(set) var completedNoteIDs = Set<UUID>()
     
     // Manual mode output (free-pitch based).
-    @Published var detectedNote: DetectedNote?
-    @Published var manualCentsDistance: Float = 0.0
-    @Published var manualLowestFrequency: Float?
-    @Published var manualHighestFrequency: Float?
-    @Published var activeMode: TunerMode = .auto
+    var detectedNote: DetectedNote?
+    var manualCentsDistance: Float = 0.0
+    var manualLowestFrequency: Float?
+    var manualHighestFrequency: Float?
+    var activeMode: TunerMode = .auto
 
     // Backward-compatible binding used by the legacy TunerView branch.
     var centsDistance: Float {
@@ -74,7 +76,8 @@ final class TunerViewModel: ObservableObject {
 
     private let userDefaults: UserDefaults
 
-    private var cancellables = Set<AnyCancellable>()
+    // Read from deinit, which can't go through observation-tracked accessors.
+    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
     private let referenceA4: Float = 440.0
@@ -98,7 +101,7 @@ final class TunerViewModel: ObservableObject {
     private var manualCandidateMIDI: Int?
     private var manualCandidateStreak = 0
     private let manualSwitchRequiredFrames = 4
-    private var isConductorRunning = false
+    @ObservationIgnored private var isConductorRunning = false
     
     init(
         instrument: Instrument = InstrumentCatalog.guitar6,
