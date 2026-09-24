@@ -62,8 +62,7 @@ final class TunerSession {
     private let userDefaults: UserDefaults
     @ObservationIgnored private var eventHandlers: [(TunerSessionEvent) -> Void] = []
 
-    // Keep tuning math centralized and explicit.
-    private let referenceA4: Float = 440.0
+    private let calibration = PitchCalibration.standard
     private let pitchSmoothingFactor: Float = 0.2
     private let signalHoldDuration: TimeInterval = 1.0
     private let noteSwitchRequiredFrames = 4
@@ -194,9 +193,8 @@ final class TunerSession {
         }
     }
 
-    // Converts the current frequency to nearest chromatic note using A4=440Hz equal temperament.
     private func detectNearestNote(for frequency: Float) -> DetectedNote {
-        let midi = 69.0 + 12.0 * log2(Double(frequency / referenceA4))
+        let midi = calibration.midiNumber(for: Double(frequency))
         return noteFromMIDI(Int(midi.rounded()), frequency: frequency)
     }
 
@@ -245,7 +243,7 @@ final class TunerSession {
         let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         let noteIndex = ((midi % 12) + 12) % 12
         let octave = (midi / 12) - 1
-        let nearestFrequency = referenceA4 * pow(2.0, Float(midi - 69) / 12.0)
+        let nearestFrequency = Float(calibration.frequency(ofMIDI: midi))
         let cents = wrappedCents(1200.0 * log2(frequency / nearestFrequency))
 
         return DetectedNote(

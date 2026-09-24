@@ -1,7 +1,6 @@
 import Foundation
 
 struct InstrumentCatalog {
-    private static let referenceA4: Double = 440.0
     private static let noteOffsets: [String: Int] = [
         "C": 0, "C#": 1, "Db": 1,
         "D": 2, "D#": 3, "Eb": 3,
@@ -12,11 +11,10 @@ struct InstrumentCatalog {
         "B": 11
     ]
 
-    // Converts a note name + octave into an equal-tempered frequency (A4 = 440 Hz).
     private static func buildNote(_ name: String, octave: Int) -> Note {
         let semitoneInOctave = noteOffsets[name] ?? 0
         let midi = (octave + 1) * 12 + semitoneInOctave
-        let frequency = referenceA4 * pow(2.0, Double(midi - 69) / 12.0)
+        let frequency = PitchCalibration.standard.frequency(ofMIDI: midi)
         return Note(name: name, frequency: frequency, octave: octave)
     }
 
