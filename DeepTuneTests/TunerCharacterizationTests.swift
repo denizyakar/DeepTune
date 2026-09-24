@@ -27,12 +27,13 @@ final class TunerCharacterizationTests: XCTestCase {
         let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
         addTeardownBlock { defaults.removePersistentDomain(forName: suiteName) }
 
-        let viewModel = TunerViewModel(
+        let session = TunerSession(
             instrument: InstrumentCatalog.guitar6,
             conductor: SilentConductor(),
             userDefaults: defaults
         )
-        viewModel.setInstrumentAndTuning(
+        let viewModel = TunerViewModel(session: session, userDefaults: defaults)
+        session.setInstrumentAndTuning(
             instrument: InstrumentCatalog.guitar6,
             tuning: InstrumentCatalog.guitar6.defaultTuning
         )
@@ -45,11 +46,11 @@ final class TunerCharacterizationTests: XCTestCase {
 
         func feed(_ frames: [(pitch: Float, amplitude: Float)]) {
             for frame in frames {
-                viewModel.debugInjectFrame(pitch: frame.pitch, amplitude: frame.amplitude, timestamp: now)
+                session.debugInjectFrame(pitch: frame.pitch, amplitude: frame.amplitude, timestamp: now)
                 now.addTimeInterval(frameInterval)
-                trace.append(Self.snapshot(of: viewModel, frame: trace.count))
+                trace.append(Self.snapshot(of: session, viewModel, frame: trace.count))
                 reachedSuccess = reachedSuccess || viewModel.isTuningSuccessful
-                if let midi = viewModel.detectedNote?.midiNumber { detectedMIDIs.insert(midi) }
+                if let midi = session.detectedNote?.midiNumber { detectedMIDIs.insert(midi) }
             }
         }
 
@@ -64,13 +65,13 @@ final class TunerCharacterizationTests: XCTestCase {
         feed(Self.steady(pitch: 330.0, amplitude: 0.1, frames: 20))
 
         // Manual mode: glide from A2 to B2 so the stabilised note has to switch.
-        viewModel.setActiveMode(.manual)
+        session.setActiveMode(.manual)
         feed(Self.glide(from: 110.0, to: 123.47, frames: 150))
         feed(Self.silence(frames: 10))
         feed(Self.steady(pitch: 220.0, amplitude: 0.1, frames: 30))
 
         // Back to auto on the A string, slightly flat.
-        viewModel.setActiveMode(.auto)
+        session.setActiveMode(.auto)
         viewModel.setTargetNote(notes[1])
         feed(Self.steady(pitch: 110.0 * pow(2.0, -15.0 / 1200.0), amplitude: 0.1, frames: 60))
 
@@ -91,15 +92,15 @@ final class TunerCharacterizationTests: XCTestCase {
 
     // MARK: - Trace
 
-    private static func snapshot(of viewModel: TunerViewModel, frame: Int) -> String {
-        let detected = viewModel.detectedNote.map { "\($0.midiNumber)@\(format($0.centsFromEqualTempered))" } ?? "-"
+    private static func snapshot(of session: TunerSession, _ viewModel: TunerViewModel, frame: Int) -> String {
+        let detected = session.detectedNote.map { "\($0.midiNumber)@\(format($0.centsFromEqualTempered))" } ?? "-"
         return [
             "\(frame)",
-            "pitch=\(format(viewModel.currentPitch))",
-            "amp=\(format(viewModel.currentAmplitude))",
-            "sig=\(viewModel.isSignalDetected)",
+            "pitch=\(format(session.currentPitch))",
+            "amp=\(format(session.currentAmplitude))",
+            "sig=\(session.isSignalDetected)",
             "tsig=\(viewModel.isTargetSignalDetected)",
-            "ref=\(viewModel.hasPitchReference)",
+            "ref=\(session.hasPitchReference)",
             "auto=\(format(viewModel.autoCentsDistance))",
             "ok=\(viewModel.isTuningSuccessful)",
             "held=\(format(Float(viewModel.inTuneDuration)))",

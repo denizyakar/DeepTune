@@ -10,7 +10,7 @@ protocol ChordFinderAudioSource: AnyObject {
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow?
 }
 
-extension TunerViewModel: ChordFinderAudioSource {}
+extension TunerSession: ChordFinderAudioSource {}
 
 @Observable
 final class ChordFinderViewModel {

@@ -10,6 +10,7 @@ struct TunerView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.scenePhase) private var scenePhase
 
+    @State private var session: TunerSession
     @State private var viewModel: TunerViewModel
     @State private var permissionManager: PermissionManager
 
@@ -23,7 +24,9 @@ struct TunerView: View {
     init(initialInstrument: Instrument = InstrumentCatalog.guitar6) {
         // Unlike StateObject, State builds these eagerly on every init. That is fine
         // only because TunerView is the root screen and its parent never re-renders.
-        _viewModel = State(initialValue: TunerViewModel(instrument: initialInstrument))
+        let session = TunerSession(instrument: initialInstrument)
+        _session = State(initialValue: session)
+        _viewModel = State(initialValue: TunerViewModel(session: session))
         _permissionManager = State(initialValue: PermissionManager())
     }
 
@@ -40,7 +43,7 @@ struct TunerView: View {
                     .tag(TunerTab.auto)
                     .onAppear {
                         if viewModel.targetNote == nil {
-                            viewModel.setTargetNote(viewModel.currentTuning.notes.first)
+                            viewModel.setTargetNote(session.currentTuning.notes.first)
                         }
                     }
 
@@ -84,16 +87,16 @@ struct TunerView: View {
             synchronizeAudioState()
         }
         .onDisappear {
-            viewModel.stop()
+            session.stop()
         }
         .task {
-            await viewModel.processPitchUpdates()
+            await session.processPitchUpdates()
         }
         .sheet(isPresented: $showInstrumentPicker) {
-            InstrumentPickerView(viewModel: viewModel)
+            InstrumentPickerView(session: session)
         }
         .sheet(isPresented: $showTuningPicker) {
-            TuningPickerView(viewModel: viewModel)
+            TuningPickerView(session: session)
         }
         .alert("Microphone Access Required", isPresented: $showPermissionAlert) {
             Button("Settings", role: .none) {
@@ -120,9 +123,9 @@ struct TunerView: View {
 
     private func synchronizeAudioState() {
         if shouldRunAudioEngine {
-            viewModel.start()
+            session.start()
         } else {
-            viewModel.stop()
+            session.stop()
         }
     }
 
@@ -136,13 +139,13 @@ struct TunerView: View {
     private func applyAudioTrackingMode(for tab: TunerTab) {
         switch tab {
         case .auto:
-            viewModel.setActiveMode(.auto)
+            session.setActiveMode(.auto)
         case .manual, .chord:
-            viewModel.setActiveMode(.manual)
+            session.setActiveMode(.manual)
         }
 
         // Only the chord finder reads the raw sample window.
-        viewModel.setRecentAudioCaptureEnabled(tab == .chord)
+        session.setRecentAudioCaptureEnabled(tab == .chord)
     }
 
     private var autoModeView: some View {
@@ -161,7 +164,7 @@ struct TunerView: View {
                             targetNote: viewModel.targetNote,
                             isTuningSuccessful: viewModel.isTuningSuccessful,
                             isSignalDetected: viewModel.isTargetSignalDetected,
-                            hasPitchReference: viewModel.hasPitchReference
+                            hasPitchReference: session.hasPitchReference
                         )
 
                     HStack {
@@ -237,8 +240,8 @@ struct TunerView: View {
 
                     ManualStrobeArea(
                         centsDistance: viewModel.manualCentsDistance,
-                        detectedNote: viewModel.detectedNote,
-                        isSignalDetected: viewModel.isSignalDetected
+                        detectedNote: session.detectedNote,
+                        isSignalDetected: session.isSignalDetected
                     )
                     .padding(16)
                     .appCard()
@@ -265,7 +268,7 @@ struct TunerView: View {
                         .frame(height: 88)
 
                     ChordFinderView(
-                        viewModel: viewModel,
+                        session: session,
                         isSessionActive: $isChordFinderSessionActive
                     )
                     .padding(16)
@@ -303,17 +306,17 @@ struct TunerView: View {
     private var manualInfoPanel: some View {
         VStack(spacing: 14) {
             HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(viewModel.detectedNote?.name ?? "--")
+                Text(session.detectedNote?.name ?? "--")
                     .font(.system(size: 84, weight: .heavy, design: .rounded))
-                    .foregroundColor(viewModel.isSignalDetected ? AppTheme.textPrimary : AppTheme.textTertiary)
+                    .foregroundColor(session.isSignalDetected ? AppTheme.textPrimary : AppTheme.textTertiary)
 
-                Text(viewModel.detectedNote.map { "\($0.octave)" } ?? "")
+                Text(session.detectedNote.map { "\($0.octave)" } ?? "")
                     .font(.title3.weight(.bold))
                     .foregroundColor(AppTheme.textSecondary)
             }
 
             Text(
-                viewModel.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
+                session.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
                     ?? "Play a note to detect frequency"
             )
             .font(.subheadline.weight(.medium))
@@ -366,8 +369,8 @@ struct TunerView: View {
                 VStack(alignment: .leading, spacing: 6) {
                     Button(action: { showInstrumentPicker.toggle() }) {
                         compactSelector(
-                            icon: instrumentIconName(for: viewModel.currentInstrument.type),
-                            title: viewModel.currentInstrument.name,
+                            icon: instrumentIconName(for: session.currentInstrument.type),
+                            title: session.currentInstrument.name,
                             isInteractive: true
                         )
                     }
@@ -376,7 +379,7 @@ struct TunerView: View {
                     Button(action: { showTuningPicker.toggle() }) {
                         compactSelector(
                             icon: "dial.medium.fill",
-                            title: viewModel.currentTuning.name,
+                            title: session.currentTuning.name,
                             isInteractive: true
                         )
                     }
@@ -489,7 +492,7 @@ struct TunerView: View {
 
             ZStack {
                 ZStack(alignment: .topLeading) {
-                    Image(headstockAssetName(for: viewModel.currentInstrument.type))
+                    Image(headstockAssetName(for: session.currentInstrument.type))
                         .resizable()
                         .scaledToFill()
                         .frame(
@@ -520,9 +523,9 @@ struct TunerView: View {
 
     @ViewBuilder
     private func pegLayout(in canvasSize: CGSize) -> some View {
-        let notes = viewModel.currentTuning.notes
+        let notes = session.currentTuning.notes
         let anchors = pegAnchors(
-            for: viewModel.currentInstrument.type,
+            for: session.currentInstrument.type,
             noteCount: notes.count
         )
 
@@ -616,7 +619,7 @@ struct TunerView: View {
             isActive: viewModel.targetNote == note,
             isCompleted: viewModel.isNoteCompleted(note)
         )
-        .scaleEffect(pegScale(for: viewModel.currentInstrument.type))
+        .scaleEffect(pegScale(for: session.currentInstrument.type))
         .onTapGesture {
             viewModel.setTargetNote(note)
         }

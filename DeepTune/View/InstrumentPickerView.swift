@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct InstrumentPickerView: View {
-    let viewModel: TunerViewModel
+    let session: TunerSession
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -37,7 +37,7 @@ struct InstrumentPickerView: View {
 
     private func instrumentRow(_ instrument: Instrument) -> some View {
         Button {
-            viewModel.setInstrument(instrument)
+            session.setInstrument(instrument)
             dismiss()
         } label: {
             HStack {
@@ -49,7 +49,7 @@ struct InstrumentPickerView: View {
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 Spacer()
-                if viewModel.currentInstrument == instrument {
+                if session.currentInstrument == instrument {
                     Image(systemName: "checkmark")
                         .foregroundColor(AppTheme.accent)
                 }
