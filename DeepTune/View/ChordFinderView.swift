@@ -98,13 +98,22 @@ struct ChordFinderView: View {
         }
         // Tying the loop to task(id:) means SwiftUI cancels it when the session ends
         // or the view goes away — no Task handle to hold, cancel and forget to clear.
+        // Starting and stopping the model happens synchronously elsewhere: waiting
+        // for this task to be cancelled would leave a window where a finished
+        // analysis could still land.
         .task(id: isSessionActive) {
             guard isSessionActive else { return }
-            model.beginListening()
-            defer { model.stopListening() }
             await model.runListeningLoop()
         }
+        // Catches the session ending from outside the button — the tab changing, or
+        // the analysis finishing and asking to close the one-shot session.
+        .onChange(of: isSessionActive) { _, isActive in
+            if !isActive {
+                model.stopListening()
+            }
+        }
         .onDisappear {
+            model.stopListening()
             isSessionActive = false
         }
     }
@@ -216,9 +225,10 @@ struct ChordFinderView: View {
 
     private func toggleSession() {
         if isSessionActive {
+            model.stopListening()
             isSessionActive = false
         } else {
-            model.clearLastResult()
+            model.beginListening()
             isSessionActive = true
         }
     }

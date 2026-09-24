@@ -7,7 +7,10 @@ private final class FakeAudioSource: ChordFinderAudioSource {
     var isSignalDetected: Bool = false
     var detectedNote: DetectedNote?
 
-    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
+    /// Non-nil so a finished capture actually reaches the analyzer.
+    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? {
+        AudioSampleWindow(samples: [0.0], sampleRate: 22_050)
+    }
 
     /// Nothing playing: below every threshold, no pitch lock.
     func goQuiet() {
@@ -30,20 +33,60 @@ private final class FakeAudioSource: ChordFinderAudioSource {
     }
 }
 
-/// Characterisation tests for the capture state machine. These lock in today's
-/// behaviour — including the parts we already know are wrong — so the behaviour
-/// round can change them deliberately.
+/// Holds every analysis open until the test decides what it returns, so "the
+/// model answered while the user was pressing Stop" can be staged exactly.
+private actor GatedAnalyzer: ChordAnalyzing {
+    private var gate: CheckedContinuation<ChordDetectionResult?, Never>?
+    private(set) var analyzeCallCount = 0
+
+    var isHoldingAnalysis: Bool { gate != nil }
+
+    func prepare() -> Bool { true }
+
+    func analyze(audioWindow: AudioSampleWindow) async -> ChordDetectionResult? {
+        analyzeCallCount += 1
+        return await withCheckedContinuation { gate = $0 }
+    }
+
+    func finish(with result: ChordDetectionResult?) {
+        gate?.resume(returning: result)
+        gate = nil
+    }
+}
+
+/// Characterisation tests for the capture state machine, plus the session
+/// lifecycle behind the Start/Stop button.
 @MainActor
 final class ChordFinderViewModelTests: XCTestCase {
     private var source: FakeAudioSource!
+    private var analyzer: GatedAnalyzer!
     private var model: ChordFinderViewModel!
     private var clock: Date!
+    private var sessionEndRequests = 0
+
+    private let cMajor = ChordDetectionResult(
+        name: "C",
+        rootName: "C",
+        confidence: 0.8,
+        observedNoteNames: ["C", "E", "G"],
+        bassNoteName: "C",
+        candidates: []
+    )
 
     override func setUp() async throws {
         try await super.setUp()
         source = FakeAudioSource()
-        model = ChordFinderViewModel(audioSource: source)
+        analyzer = GatedAnalyzer()
+        model = ChordFinderViewModel(audioSource: source, analyzer: analyzer, analysisSettleDelay: .zero)
         clock = Date(timeIntervalSinceReferenceDate: 0)
+        sessionEndRequests = 0
+        model.onRequestSessionEnd = { [weak self] in self?.sessionEndRequests += 1 }
+    }
+
+    override func tearDown() async throws {
+        // Never leave an analysis parked on the gate.
+        await analyzer.finish(with: nil)
+        try await super.tearDown()
     }
 
     /// Advances the fake clock and runs one state-machine step.
@@ -161,7 +204,161 @@ final class ChordFinderViewModelTests: XCTestCase {
         XCTAssertEqual(model.phase, .idle)
     }
 
+    // MARK: - Session lifecycle (the Start/Stop button)
+
+    func testStoppingWhileReadyReturnsToIdle() {
+        model.beginListening()
+        model.stopListening()
+
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(sessionEndRequests, 0)
+    }
+
+    func testStoppingWhileCapturingNeverStartsAnAnalysis() async {
+        startCapturing()
+        source.play(midi: 64)
+        tick()
+        model.stopListening()
+
+        // Ticks after the stop must not revive the capture.
+        source.goQuiet()
+        tick(after: 0.5)
+        tick(after: 0.4)
+
+        let calls = await analyzer.analyzeCallCount
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertTrue(model.samples.isEmpty)
+        XCTAssertNil(model.analysisTask)
+        XCTAssertEqual(calls, 0)
+    }
+
+    func testCompletedAnalysisShowsTheResultAndClosesTheSession() async throws {
+        let pending = try await driveToHeldAnalysis()
+
+        await analyzer.finish(with: cMajor)
+        await pending.value
+
+        XCTAssertEqual(model.lastResult?.name, "C")
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(sessionEndRequests, 1, "a one-shot session closes itself once")
+    }
+
+    func testStoppingDuringAnalysisDiscardsTheResult() async throws {
+        let pending = try await driveToHeldAnalysis()
+
+        model.stopListening()
+        await analyzer.finish(with: cMajor)
+        await pending.value
+
+        XCTAssertNil(model.lastResult, "a stopped analysis must not show up afterwards")
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertEqual(sessionEndRequests, 0)
+    }
+
+    func testStoppingAndRestartingDuringAnalysisKeepsTheNewSession() async throws {
+        let pending = try await driveToHeldAnalysis()
+
+        model.stopListening()
+        model.beginListening()
+        await analyzer.finish(with: cMajor)
+        await pending.value
+
+        XCTAssertEqual(model.phase, .ready, "the new session must survive the old analysis")
+        XCTAssertNil(model.lastResult, "and must not inherit its result")
+        XCTAssertEqual(sessionEndRequests, 0, "the old analysis must not close the new session")
+    }
+
+    func testStartingANewSessionDuringAnalysisDiscardsTheOldResult() async throws {
+        let pending = try await driveToHeldAnalysis()
+
+        model.beginListening()
+        await analyzer.finish(with: cMajor)
+        await pending.value
+
+        XCTAssertEqual(model.phase, .ready)
+        XCTAssertNil(model.lastResult)
+        XCTAssertEqual(sessionEndRequests, 0)
+    }
+
+    func testStoppingDuringTheSettleDelayNeverReachesTheModel() async throws {
+        // A settle delay long enough that only cancellation can end it.
+        model = ChordFinderViewModel(audioSource: source, analyzer: analyzer, analysisSettleDelay: .seconds(60))
+        model.onRequestSessionEnd = { [weak self] in self?.sessionEndRequests += 1 }
+        driveToAnalyzing()
+        let pending = try XCTUnwrap(model.analysisTask)
+
+        model.stopListening()
+        await pending.value
+
+        let calls = await analyzer.analyzeCallCount
+        XCTAssertEqual(calls, 0)
+        XCTAssertNil(model.lastResult)
+        XCTAssertEqual(model.phase, .idle)
+    }
+
+    func testStartingASessionClearsThePreviousResult() async throws {
+        let pending = try await driveToHeldAnalysis()
+        await analyzer.finish(with: cMajor)
+        await pending.value
+        XCTAssertNotNil(model.lastResult)
+
+        model.beginListening()
+
+        XCTAssertNil(model.lastResult, "a new session is a new question")
+        XCTAssertEqual(model.phase, .ready)
+    }
+
+    func testFallsBackToTemplateMatchingWhenTheModelHasNoAnswer() async throws {
+        // The captured notes are C, E and G, so the fallback should name C major.
+        let pending = try await driveToHeldAnalysis()
+
+        await analyzer.finish(with: nil)
+        await pending.value
+
+        XCTAssertEqual(model.lastResult?.name, "C")
+        XCTAssertEqual(sessionEndRequests, 1)
+    }
+
+    func testStoppingTwiceIsHarmless() async throws {
+        let pending = try await driveToHeldAnalysis()
+
+        model.stopListening()
+        model.stopListening()
+        await analyzer.finish(with: cMajor)
+        await pending.value
+
+        XCTAssertEqual(model.phase, .idle)
+        XCTAssertNil(model.lastResult)
+        XCTAssertEqual(sessionEndRequests, 0)
+    }
+
     // MARK: - Helpers
+
+    /// Plays C-E-G, lets the capture finish, and returns once the analysis is
+    /// parked inside the analyzer waiting for the test to answer.
+    private func driveToHeldAnalysis() async throws -> Task<Void, Never> {
+        driveToAnalyzing()
+        let pending = try XCTUnwrap(model.analysisTask)
+
+        for _ in 0..<1_000 {
+            if await analyzer.isHoldingAnalysis { return pending }
+            await Task.yield()
+        }
+        XCTFail("the analysis never reached the analyzer")
+        return pending
+    }
+
+    private func driveToAnalyzing() {
+        startCapturing()
+        for midi in [64, 67, 60, 64, 67] {
+            source.play(midi: midi)
+            tick()
+        }
+        source.goQuiet()
+        tick(after: 0.5)
+        tick(after: 0.4)
+        XCTAssertEqual(model.phase, .analyzing, "precondition: the capture finished")
+    }
 
     private func startCapturing() {
         model.beginListening()

@@ -61,7 +61,7 @@ final class ChordFinderViewModel {
     var onRequestSessionEnd: (() -> Void)?
 
     private let audioSource: ChordFinderAudioSource
-    private let analyzer: BasicPitchChordAnalyzer
+    private let analyzer: any ChordAnalyzing
 
     private var lastAcceptedMIDI: Int?
     private var lastAcceptedAt: Date?
@@ -69,7 +69,11 @@ final class ChordFinderViewModel {
     private var lastStrongSignalAt: Date?
     private var strongSignalStreak = 0
     private var sawQuietFrameInReady = false
-    private var analysisTask: Task<Void, Never>?
+    /// Readable so tests can await an analysis they have held open.
+    private(set) var analysisTask: Task<Void, Never>?
+    /// Changes on every start and stop, so an analysis can tell whether the session
+    /// it was started for is still the current one when its result arrives.
+    private var sessionID = 0
 
     let listeningPollIntervalNanoseconds: UInt64 = 120_000_000
     private let repeatedMIDICooldown: TimeInterval = 0.08
@@ -81,11 +85,16 @@ final class ChordFinderViewModel {
     private let maximumCaptureDuration: TimeInterval = 2.20
     private let minimumSamplesForAnalysis = 5
     private let analysisWindowDuration: TimeInterval = 2.3
-    private let analysisSettleDelayNanoseconds: UInt64 = 220_000_000
+    private let analysisSettleDelay: Duration
 
-    init(audioSource: ChordFinderAudioSource, analyzer: BasicPitchChordAnalyzer = .shared) {
+    init(
+        audioSource: ChordFinderAudioSource,
+        analyzer: any ChordAnalyzing = BasicPitchChordAnalyzer.shared,
+        analysisSettleDelay: Duration = .milliseconds(220)
+    ) {
         self.audioSource = audioSource
         self.analyzer = analyzer
+        self.analysisSettleDelay = analysisSettleDelay
     }
 
     // MARK: - Model
@@ -97,24 +106,29 @@ final class ChordFinderViewModel {
 
     // MARK: - Session
 
+    /// Starts a fresh session. The previous result is cleared: a new session is a
+    /// new question.
     func beginListening() {
+        endCurrentSession()
+        sessionID += 1
+        lastResult = nil
         phase = .ready
-        clearCaptureBuffer()
-        strongSignalStreak = 0
-        sawQuietFrameInReady = false
     }
 
+    /// Ends the session and discards any analysis still in flight. Safe to call
+    /// more than once — every path that can end a session calls it.
     func stopListening() {
+        endCurrentSession()
+        sessionID += 1
+        phase = .idle
+    }
+
+    private func endCurrentSession() {
         analysisTask?.cancel()
         analysisTask = nil
-        phase = .idle
         strongSignalStreak = 0
         sawQuietFrameInReady = false
         clearCaptureBuffer()
-    }
-
-    func clearLastResult() {
-        lastResult = nil
     }
 
     /// Polls the audio source until cancelled. Cancellation is the caller's job —
@@ -242,19 +256,28 @@ final class ChordFinderViewModel {
         let audioWindow = audioSource.recentAudioWindow(duration: analysisWindowDuration)
         clearCaptureBuffer()
 
+        let analysisSessionID = sessionID
         analysisTask?.cancel()
         analysisTask = Task { [weak self] in
             guard let self else { return }
-            try? await Task.sleep(nanoseconds: self.analysisSettleDelayNanoseconds)
-            guard !Task.isCancelled else { return }
+            try? await Task.sleep(for: self.analysisSettleDelay)
+            guard self.isAwaitingResult(for: analysisSessionID) else { return }
 
             let modelResult: ChordDetectionResult? = await {
                 guard let audioWindow else { return nil }
                 return await self.analyzer.analyze(audioWindow: audioWindow)
             }()
 
+            // CoreML inference can't be interrupted, so the session may have been
+            // stopped — or stopped and restarted — while it ran. Cancellation alone
+            // isn't enough: the stop can reach us after the model has returned.
+            guard self.isAwaitingResult(for: analysisSessionID) else { return }
             self.applyResult(modelResult: modelResult, capturedCounts: capturedCounts)
         }
+    }
+
+    private func isAwaitingResult(for analysisSessionID: Int) -> Bool {
+        !Task.isCancelled && analysisSessionID == sessionID && phase == .analyzing
     }
 
     private func applyResult(modelResult: ChordDetectionResult?, capturedCounts: [Int: Int]) {
