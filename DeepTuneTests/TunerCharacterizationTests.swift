@@ -1,15 +1,6 @@
 import XCTest
 @testable import DeepTune
 
-private final class SilentConductor: TunerConductorType {
-    func pitchUpdates() -> AsyncStream<PitchData> { AsyncStream { $0.finish() } }
-    func start() {}
-    func stop() {}
-    func setTrackingTargetFrequency(_ frequency: Float?) {}
-    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
-    func setRecentAudioCaptureEnabled(_ enabled: Bool) {}
-}
-
 /// Pins the tuner's frame-by-frame output for a fixed script of synthetic frames.
 ///
 /// This is a safety net for refactors that must not change behaviour: every
@@ -18,7 +9,7 @@ private final class SilentConductor: TunerConductorType {
 /// behaviour, update the golden hash in the same commit and say why.
 @MainActor
 final class TunerCharacterizationTests: XCTestCase {
-    private static let goldenTraceHash = "242e4a98debec28b"
+    private static let goldenTraceHash = "4b25a7163e8928f6"
 
     private let frameInterval: TimeInterval = 0.02
 

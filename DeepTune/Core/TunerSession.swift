@@ -43,7 +43,7 @@ enum TunerSessionEvent {
 final class TunerSession {
     private enum PersistenceKey {
         static let instrumentType = "DeepTune.selectedInstrumentType"
-        static let tuningSignature = "DeepTune.selectedTuningSignature"
+        static let tuningID = "DeepTune.selectedTuningID"
     }
 
     private(set) var currentInstrument: Instrument
@@ -62,8 +62,7 @@ final class TunerSession {
     private let userDefaults: UserDefaults
     @ObservationIgnored private var eventHandlers: [(TunerSessionEvent) -> Void] = []
 
-    // Keep tuning math centralized and explicit.
-    private let referenceA4: Float = 440.0
+    private let calibration = PitchCalibration.standard
     private let pitchSmoothingFactor: Float = 0.2
     private let signalHoldDuration: TimeInterval = 1.0
     private let noteSwitchRequiredFrames = 4
@@ -77,17 +76,21 @@ final class TunerSession {
     // Read from deinit, which can't go through observation-tracked accessors.
     @ObservationIgnored private var isConductorRunning = false
 
+    /// Pass `instrument` to start on it regardless of what was saved; leave it nil
+    /// to restore the user's last selection.
     init(
-        instrument: Instrument = InstrumentCatalog.guitar6,
+        instrument: Instrument? = nil,
         conductor: TunerConductorType = TunerConductor(),
         userDefaults: UserDefaults = .standard
     ) {
         self.conductor = conductor
         self.userDefaults = userDefaults
-        let restoredInstrument = Self.restoreInstrument(from: userDefaults) ?? instrument
-        self.currentInstrument = restoredInstrument
-        self.currentTuning = Self.restoreTuning(for: restoredInstrument, from: userDefaults)
-            ?? restoredInstrument.defaultTuning
+        let startingInstrument = instrument
+            ?? Self.restoreInstrument(from: userDefaults)
+            ?? InstrumentCatalog.guitar6
+        self.currentInstrument = startingInstrument
+        self.currentTuning = Self.restoreTuning(for: startingInstrument, from: userDefaults)
+            ?? startingInstrument.defaultTuning
         persistSelection()
     }
 
@@ -194,9 +197,8 @@ final class TunerSession {
         }
     }
 
-    // Converts the current frequency to nearest chromatic note using A4=440Hz equal temperament.
     private func detectNearestNote(for frequency: Float) -> DetectedNote {
-        let midi = 69.0 + 12.0 * log2(Double(frequency / referenceA4))
+        let midi = calibration.midiNumber(for: Double(frequency))
         return noteFromMIDI(Int(midi.rounded()), frequency: frequency)
     }
 
@@ -245,7 +247,7 @@ final class TunerSession {
         let noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
         let noteIndex = ((midi % 12) + 12) % 12
         let octave = (midi / 12) - 1
-        let nearestFrequency = referenceA4 * pow(2.0, Float(midi - 69) / 12.0)
+        let nearestFrequency = Float(calibration.frequency(ofMIDI: midi))
         let cents = wrappedCents(1200.0 * log2(frequency / nearestFrequency))
 
         return DetectedNote(
@@ -272,7 +274,7 @@ final class TunerSession {
 
     private func persistSelection() {
         userDefaults.set(currentInstrument.type.persistenceKey, forKey: PersistenceKey.instrumentType)
-        userDefaults.set(Self.tuningSignature(for: currentTuning), forKey: PersistenceKey.tuningSignature)
+        userDefaults.set(currentTuning.id, forKey: PersistenceKey.tuningID)
     }
 
     private static func restoreInstrument(from userDefaults: UserDefaults) -> Instrument? {
@@ -285,16 +287,11 @@ final class TunerSession {
     }
 
     private static func restoreTuning(for instrument: Instrument, from userDefaults: UserDefaults) -> Tuning? {
-        guard let persistedSignature = userDefaults.string(forKey: PersistenceKey.tuningSignature) else {
+        guard let persistedID = userDefaults.string(forKey: PersistenceKey.tuningID) else {
             return nil
         }
 
-        return instrument.availableTunings.first { tuningSignature(for: $0) == persistedSignature }
-    }
-
-    private static func tuningSignature(for tuning: Tuning) -> String {
-        let noteSignature = tuning.notes.map(\.fullName).joined(separator: ",")
-        return "\(tuning.name)|\(noteSignature)"
+        return instrument.availableTunings.first { $0.id == persistedID }
     }
 }
 

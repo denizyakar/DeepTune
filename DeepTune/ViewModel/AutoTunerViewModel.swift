@@ -20,7 +20,7 @@ final class AutoTunerViewModel {
     }
     var isTuningSuccessful: Bool = false
     var inTuneDuration: Double = 0.0
-    private(set) var completedNoteIDs = Set<UUID>()
+    private(set) var completedNoteIDs = Set<Note.ID>()
 
     var hasPitchReference: Bool { session.hasPitchReference }
     var currentInstrument: Instrument { session.currentInstrument }

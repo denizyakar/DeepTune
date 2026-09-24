@@ -1,4 +1,5 @@
 import Foundation
+@testable import DeepTune
 
 struct TunerDiagnosticsReport {
     let scenarioName: String
@@ -50,14 +51,28 @@ struct AutoValidationReport {
     }
 }
 
+@MainActor
 enum TunerDiagnostics {
+    private static let scratchSuiteName = "DeepTuneTests.Diagnostics"
+
+    // A real conductor would start the audio engine, and the standard defaults
+    // would both leak the user's saved selection in and overwrite it.
+    private static func makeSession(
+        instrument: Instrument = InstrumentCatalog.guitar6
+    ) -> (session: TunerSession, defaults: UserDefaults) {
+        let defaults = UserDefaults(suiteName: scratchSuiteName)!
+        defaults.removePersistentDomain(forName: scratchSuiteName)
+        let session = TunerSession(instrument: instrument, conductor: SilentConductor(), userDefaults: defaults)
+        return (session, defaults)
+    }
+
     static func runSyntheticTargetScenario(
         target: Note,
         duration: Double = 8.0,
         frameRate: Double = 50.0
     ) -> TunerDiagnosticsReport {
-        let session = TunerSession()
-        let viewModel = AutoTunerViewModel(session: session)
+        let (session, defaults) = makeSession()
+        let viewModel = AutoTunerViewModel(session: session, userDefaults: defaults)
         viewModel.setTargetNote(target)
         
         let dt = 1.0 / frameRate
@@ -73,9 +88,7 @@ enum TunerDiagnostics {
             let t = Double(frame) * dt
             let signal = syntheticPluckSignal(time: t, targetFrequency: Float(target.frequency))
             
-            #if DEBUG
             session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
-            #endif
             
             let currentCents = viewModel.autoCentsDistance
             peakJump = max(peakJump, abs(currentCents - previousCents))
@@ -105,7 +118,7 @@ enum TunerDiagnostics {
         frameRate: Double = 60.0,
         profile: ManualSignalProfile = .harmonicStress
     ) -> ManualTunerDiagnosticsReport {
-        let session = TunerSession()
+        let (session, _) = makeSession()
         let viewModel = ManualTunerViewModel(session: session)
         session.setActiveMode(.manual)
         
@@ -124,9 +137,7 @@ enum TunerDiagnostics {
             let t = Double(frame) * dt
             let signal = syntheticManualSignal(time: t, targetFrequency: Float(target.frequency), profile: profile)
             
-            #if DEBUG
             session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
-            #endif
             
             if !session.isSignalDetected {
                 signalDropCount += 1
@@ -191,8 +202,8 @@ enum TunerDiagnostics {
         var falseLockCount = 0
         
         for note in notes {
-            let session = TunerSession(instrument: instrument)
-            let vm = AutoTunerViewModel(session: session)
+            let (session, defaults) = makeSession(instrument: instrument)
+            let vm = AutoTunerViewModel(session: session, userDefaults: defaults)
             session.setActiveMode(.auto)
             vm.setTargetNote(note)
             
@@ -204,9 +215,7 @@ enum TunerDiagnostics {
                 let t = Double(frame) * dt
                 let signal = syntheticPluckSignal(time: t, targetFrequency: Float(note.frequency))
                 
-                #if DEBUG
                 session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
-                #endif
                 
                 if signal.pitch > 0, !vm.isTargetSignalDetected {
                     signalDropFrames += 1
@@ -279,8 +288,8 @@ enum TunerDiagnostics {
         ]
         
         for (idx, wrongFrequency) in wrongFrequencies.enumerated() {
-            let session = TunerSession(instrument: instrument)
-            let vm = AutoTunerViewModel(session: session)
+            let (session, defaults) = makeSession(instrument: instrument)
+            let vm = AutoTunerViewModel(session: session, userDefaults: defaults)
             session.setActiveMode(.auto)
             vm.setTargetNote(target)
             
@@ -296,9 +305,7 @@ enum TunerDiagnostics {
                 let jitterCents = Float(sin(t * 41.0)) * 4.0
                 let pitch = wrongFrequency * pow(2.0, jitterCents / 1200.0)
                 
-                #if DEBUG
                 session.debugInjectFrame(pitch: pitch, amplitude: amplitude, timestamp: now)
-                #endif
                 
                 if vm.isTuningSuccessful {
                     return 1
