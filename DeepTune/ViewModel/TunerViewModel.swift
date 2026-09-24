@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 import Observation
 
 struct DetectedNote: Equatable {
@@ -66,7 +65,7 @@ final class TunerViewModel {
         }
     }
     
-    private let conductorDataPublisher: AnyPublisher<PitchData, Never>
+    private let pitchUpdatesHandler: () -> AsyncStream<PitchData>
     private let startConductorHandler: () -> Void
     private let stopConductorHandler: () -> Void
     private let setTrackingTargetFrequencyHandler: (Float?) -> Void
@@ -76,8 +75,6 @@ final class TunerViewModel {
 
     private let userDefaults: UserDefaults
 
-    // Read from deinit, which can't go through observation-tracked accessors.
-    @ObservationIgnored private var cancellables = Set<AnyCancellable>()
     
     // Keep tuning math centralized and explicit.
     private let referenceA4: Float = 440.0
@@ -101,6 +98,7 @@ final class TunerViewModel {
     private var manualCandidateMIDI: Int?
     private var manualCandidateStreak = 0
     private let manualSwitchRequiredFrames = 4
+    // Read from deinit, which can't go through observation-tracked accessors.
     @ObservationIgnored private var isConductorRunning = false
     
     init(
@@ -116,7 +114,7 @@ final class TunerViewModel {
         self.currentTuning = restoredTuning
         self.targetNote = restoredTuning.notes.first
         self.isAutoProgressEnabled = userDefaults.object(forKey: PersistenceKey.autoProgressEnabled) as? Bool ?? false
-        self.conductorDataPublisher = conductor.dataPublisher
+        self.pitchUpdatesHandler = { conductor.pitchUpdates() }
         self.startConductorHandler = { conductor.start() }
         self.stopConductorHandler = { conductor.stop() }
         self.setTrackingTargetFrequencyHandler = { frequency in
@@ -128,14 +126,8 @@ final class TunerViewModel {
         self.setRecentAudioCaptureEnabledHandler = { enabled in
             conductor.setRecentAudioCaptureEnabled(enabled)
         }
-        
-        conductorDataPublisher
-            .receive(on: RunLoop.main)
-            .sink { [weak self] data in
-                self?.processAudioData(pitch: data.pitch, amplitude: data.amplitude)
-            }
-            .store(in: &cancellables)
-        
+
+
         applyTrackingTargetToConductor()
         persistSelectionState()
         persistAutoProgressState()
@@ -145,7 +137,14 @@ final class TunerViewModel {
         if isConductorRunning {
             stopConductorHandler()
         }
-        cancellables.removeAll()
+    }
+
+    /// Feeds conductor frames into the tuner until the calling task is cancelled.
+    /// Driven by the view's `task()`, so the loop ends with the screen.
+    func processPitchUpdates() async {
+        for await data in pitchUpdatesHandler() {
+            processAudioData(pitch: data.pitch, amplitude: data.amplitude)
+        }
     }
     
     func start() {

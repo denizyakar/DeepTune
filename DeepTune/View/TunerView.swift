@@ -86,6 +86,9 @@ struct TunerView: View {
         .onDisappear {
             viewModel.stop()
         }
+        .task {
+            await viewModel.processPitchUpdates()
+        }
         .sheet(isPresented: $showInstrumentPicker) {
             InstrumentPickerView(viewModel: viewModel)
         }

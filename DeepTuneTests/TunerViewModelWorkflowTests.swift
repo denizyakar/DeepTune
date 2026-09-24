@@ -1,10 +1,12 @@
 import XCTest
-import Combine
 @testable import DeepTune
 
 private final class MockConductor: TunerConductorType {
-    var dataPublisher: AnyPublisher<PitchData, Never> {
-        Empty<PitchData, Never>(completeImmediately: true).eraseToAnyPublisher()
+    // Built up front so frames emitted before anyone iterates are buffered.
+    private let (updates, continuation) = AsyncStream.makeStream(of: PitchData.self)
+
+    func pitchUpdates() -> AsyncStream<PitchData> {
+        updates
     }
 
     func start() {}
@@ -13,7 +15,13 @@ private final class MockConductor: TunerConductorType {
     func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
     func setRecentAudioCaptureEnabled(_ enabled: Bool) {}
 
-    func emit(pitch: Float, amplitude: Float) {}
+    func emit(pitch: Float, amplitude: Float) {
+        continuation.yield(PitchData(pitch: pitch, amplitude: amplitude))
+    }
+
+    func finishUpdates() {
+        continuation.finish()
+    }
 }
 
 @MainActor
@@ -47,6 +55,23 @@ final class TunerViewModelWorkflowTests: XCTestCase {
         XCTAssertEqual(viewModel.currentInstrument.type, .guitar7)
         XCTAssertEqual(viewModel.currentTuning, targetTuning)
         XCTAssertEqual(viewModel.targetNote?.fullName, targetTuning.notes.first?.fullName)
+    }
+
+    func testConductorFramesReachTheViewModel() async throws {
+        let mockConductor = MockConductor()
+        let viewModel = TunerViewModel(
+            instrument: InstrumentCatalog.guitar6,
+            conductor: mockConductor,
+            userDefaults: try makeIsolatedDefaults()
+        )
+        mockConductor.emit(pitch: 110.0, amplitude: 0.12)
+        mockConductor.finishUpdates()
+
+        // Returns once the finished stream is drained.
+        await viewModel.processPitchUpdates()
+
+        XCTAssertEqual(viewModel.currentPitch, 110.0)
+        XCTAssertTrue(viewModel.isSignalDetected)
     }
 
     func testManualSessionMetricsResetOnModeTransition() throws {

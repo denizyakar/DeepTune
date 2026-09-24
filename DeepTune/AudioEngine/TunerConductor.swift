@@ -1,11 +1,10 @@
 import Foundation
-import Combine
 import AVFoundation
 import AudioKit
 import SoundpipeAudioKit
 
 protocol TunerConductorType: AnyObject {
-    var dataPublisher: AnyPublisher<PitchData, Never> { get }
+    func pitchUpdates() -> AsyncStream<PitchData>
     func start()
     func stop()
     func setTrackingTargetFrequency(_ frequency: Float?)
@@ -14,9 +13,15 @@ protocol TunerConductorType: AnyObject {
 }
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
-class TunerConductor: ObservableObject, TunerConductorType {
-    @Published var data = PitchData()
-    @Published var isStarted = false
+class TunerConductor: TunerConductorType {
+    // Every mutation is published, as @Published did before: the paths that set
+    // pitch and amplitude on separate lines emit twice per frame. Downstream
+    // smoothing was tuned against that, so it is kept until smoothing is revisited.
+    private var data = PitchData() {
+        didSet { pitchContinuation?.yield(data) }
+    }
+    private var pitchContinuation: AsyncStream<PitchData>.Continuation?
+    private(set) var isStarted = false
     
     let engine = AudioEngine()
     let initialDevice: Device
@@ -78,8 +83,13 @@ class TunerConductor: ObservableObject, TunerConductorType {
     private var isRunningIntended = false
     private var sessionObservers: [NSObjectProtocol] = []
 
-    var dataPublisher: AnyPublisher<PitchData, Never> {
-        $data.eraseToAnyPublisher()
+    /// A fresh stream per call. Starting a new one finishes the previous one, so a
+    /// restarted `task()` never leaves an earlier consumer waiting forever.
+    func pitchUpdates() -> AsyncStream<PitchData> {
+        pitchContinuation?.finish()
+        let (stream, continuation) = AsyncStream.makeStream(of: PitchData.self)
+        pitchContinuation = continuation
+        return stream
     }
     
     init() {
@@ -118,10 +128,9 @@ class TunerConductor: ObservableObject, TunerConductorType {
         // PitchTap retains this closure, and the tracker is stored on self, so a
         // strong capture here would keep the conductor (and its audio engine)
         // alive forever and stop deinit from ever removing the taps.
+        // AudioKit already delivers this on the main queue, so no hop is needed.
         tracker = PitchTap(mic) { [weak self] pitch, amp in
-            DispatchQueue.main.async {
-                self?.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
-            }
+            self?.update(pitch: pitch.first ?? 0.0, amp: amp.first ?? 0.0)
         }
 
         observeAudioSessionDisruptions()
@@ -257,6 +266,7 @@ class TunerConductor: ObservableObject, TunerConductorType {
     }
 
     deinit {
+        pitchContinuation?.finish()
         sessionObservers.forEach(NotificationCenter.default.removeObserver)
         removeRecentAudioTapIfNeeded()
     }
