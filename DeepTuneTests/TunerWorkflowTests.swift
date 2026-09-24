@@ -41,12 +41,12 @@ final class TunerWorkflowTests: XCTestCase {
         return defaults
     }
 
+    // No instrument by default, so the session restores whatever the suite holds.
     private func makeTuner(
         conductor: MockConductor = MockConductor(),
         defaults: UserDefaults
     ) -> (session: TunerSession, auto: AutoTunerViewModel, manual: ManualTunerViewModel) {
         let session = TunerSession(
-            instrument: InstrumentCatalog.guitar6,
             conductor: conductor,
             userDefaults: defaults
         )
@@ -115,6 +115,23 @@ final class TunerWorkflowTests: XCTestCase {
         let restored = makeTuner(defaults: defaults).session
 
         XCTAssertEqual(restored.currentInstrument.type, .guitar6)
+    }
+
+    func testExplicitInstrumentOverridesPersistedSelection() throws {
+        let defaults = try makeIsolatedDefaults()
+        makeTuner(defaults: defaults).session.setInstrumentAndTuning(
+            instrument: InstrumentCatalog.bass4,
+            tuning: InstrumentCatalog.bass4DropC
+        )
+
+        let session = TunerSession(
+            instrument: InstrumentCatalog.ukulele4,
+            conductor: MockConductor(),
+            userDefaults: defaults
+        )
+
+        XCTAssertEqual(session.currentInstrument.type, .ukulele)
+        XCTAssertEqual(session.currentTuning, InstrumentCatalog.ukulele4.defaultTuning)
     }
 
     func testPersistedInstrumentTuningAndAutoProgressAreRestored() throws {

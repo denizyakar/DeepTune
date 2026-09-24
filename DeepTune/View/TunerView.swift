@@ -21,7 +21,8 @@ struct TunerView: View {
     @State private var selectedTab: TunerTab = .auto
     @State private var isChordFinderSessionActive = false
 
-    init(initialInstrument: Instrument = InstrumentCatalog.guitar6) {
+    /// Nil restores the user's last selection; previews pass one to pin it.
+    init(initialInstrument: Instrument? = nil) {
         // Unlike StateObject, State builds these eagerly on every init. That is fine
         // only because TunerView is the root screen and its parent never re-renders.
         let session = TunerSession(instrument: initialInstrument)

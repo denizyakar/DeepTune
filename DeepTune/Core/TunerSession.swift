@@ -76,17 +76,21 @@ final class TunerSession {
     // Read from deinit, which can't go through observation-tracked accessors.
     @ObservationIgnored private var isConductorRunning = false
 
+    /// Pass `instrument` to start on it regardless of what was saved; leave it nil
+    /// to restore the user's last selection.
     init(
-        instrument: Instrument = InstrumentCatalog.guitar6,
+        instrument: Instrument? = nil,
         conductor: TunerConductorType = TunerConductor(),
         userDefaults: UserDefaults = .standard
     ) {
         self.conductor = conductor
         self.userDefaults = userDefaults
-        let restoredInstrument = Self.restoreInstrument(from: userDefaults) ?? instrument
-        self.currentInstrument = restoredInstrument
-        self.currentTuning = Self.restoreTuning(for: restoredInstrument, from: userDefaults)
-            ?? restoredInstrument.defaultTuning
+        let startingInstrument = instrument
+            ?? Self.restoreInstrument(from: userDefaults)
+            ?? InstrumentCatalog.guitar6
+        self.currentInstrument = startingInstrument
+        self.currentTuning = Self.restoreTuning(for: startingInstrument, from: userDefaults)
+            ?? startingInstrument.defaultTuning
         persistSelection()
     }
 
