@@ -57,7 +57,7 @@ enum TunerDiagnostics {
         frameRate: Double = 50.0
     ) -> TunerDiagnosticsReport {
         let session = TunerSession()
-        let viewModel = TunerViewModel(session: session)
+        let viewModel = AutoTunerViewModel(session: session)
         viewModel.setTargetNote(target)
         
         let dt = 1.0 / frameRate
@@ -106,9 +106,8 @@ enum TunerDiagnostics {
         profile: ManualSignalProfile = .harmonicStress
     ) -> ManualTunerDiagnosticsReport {
         let session = TunerSession()
-        let viewModel = TunerViewModel(session: session)
+        let viewModel = ManualTunerViewModel(session: session)
         session.setActiveMode(.manual)
-        viewModel.setTargetNote(nil)
         
         let dt = 1.0 / frameRate
         let frameCount = Int(duration * frameRate)
@@ -193,7 +192,7 @@ enum TunerDiagnostics {
         
         for note in notes {
             let session = TunerSession(instrument: instrument)
-            let vm = TunerViewModel(session: session)
+            let vm = AutoTunerViewModel(session: session)
             session.setActiveMode(.auto)
             vm.setTargetNote(note)
             
@@ -281,7 +280,7 @@ enum TunerDiagnostics {
         
         for (idx, wrongFrequency) in wrongFrequencies.enumerated() {
             let session = TunerSession(instrument: instrument)
-            let vm = TunerViewModel(session: session)
+            let vm = AutoTunerViewModel(session: session)
             session.setActiveMode(.auto)
             vm.setTargetNote(target)
             

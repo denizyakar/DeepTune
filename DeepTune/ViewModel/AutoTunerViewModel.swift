@@ -1,8 +1,9 @@
 import Foundation
 import Observation
 
+/// Drives the Auto screen: aims at one target string, and moves on once it holds in tune.
 @Observable
-final class TunerViewModel {
+final class AutoTunerViewModel {
     private enum PersistenceKey {
         static let autoProgressEnabled = "DeepTune.autoProgressEnabled"
     }
@@ -10,8 +11,6 @@ final class TunerViewModel {
     let session: TunerSession
 
     var isTargetSignalDetected: Bool = false
-
-    // Auto mode output (target-string based).
     var autoCentsDistance: Float = 0.0
     var targetNote: Note?
     var isAutoProgressEnabled: Bool = false {
@@ -23,10 +22,7 @@ final class TunerViewModel {
     var inTuneDuration: Double = 0.0
     private(set) var completedNoteIDs = Set<UUID>()
 
-    // Manual mode output (free-pitch based).
-    var manualCentsDistance: Float = 0.0
-    var manualLowestFrequency: Float?
-    var manualHighestFrequency: Float?
+    var hasPitchReference: Bool { session.hasPitchReference }
 
     private let userDefaults: UserDefaults
 
@@ -88,13 +84,10 @@ final class TunerViewModel {
         switch event {
         case .frame(.silent(let isWithinHoldWindow, let frameDelta, let now)):
             handleSilentFrame(isWithinHoldWindow: isWithinHoldWindow, frameDelta: frameDelta, now: now)
-        case .frame(.live(let pitch, let note, let frameDelta, let now)):
-            handleLiveFrame(pitch: pitch, note: note, frameDelta: frameDelta, now: now)
-        case .modeChanged(let mode):
+        case .frame(.live(let pitch, _, let frameDelta, let now)):
+            handleLiveFrame(pitch: pitch, frameDelta: frameDelta, now: now)
+        case .modeChanged:
             isTargetSignalDetected = false
-            if mode == .manual {
-                resetManualSessionMetrics()
-            }
             applyTrackingTargetToConductor()
         case .selectionChanged(let tuning):
             completedNoteIDs.removeAll()
@@ -123,26 +116,7 @@ final class TunerViewModel {
         }
     }
 
-    private func handleLiveFrame(pitch: Float, note: DetectedNote, frameDelta: TimeInterval, now: Date) {
-        manualCentsDistance = smoothed(
-            previous: manualCentsDistance,
-            current: max(-50.0, min(50.0, note.centsFromEqualTempered)),
-            factor: centsSmoothingFactor
-        )
-        if session.activeMode == .manual {
-            if let manualLowestFrequency {
-                self.manualLowestFrequency = min(manualLowestFrequency, note.nearestFrequency)
-            } else {
-                manualLowestFrequency = note.nearestFrequency
-            }
-
-            if let manualHighestFrequency {
-                self.manualHighestFrequency = max(manualHighestFrequency, note.nearestFrequency)
-            } else {
-                manualHighestFrequency = note.nearestFrequency
-            }
-        }
-
+    private func handleLiveFrame(pitch: Float, frameDelta: TimeInterval, now: Date) {
         guard session.activeMode == .auto, let target = targetNote else {
             isTargetSignalDetected = false
             return
@@ -262,11 +236,6 @@ final class TunerViewModel {
         isTuningSuccessful = false
         successLatchedUntil = nil
         recentTargetCentsSamples.removeAll()
-    }
-
-    private func resetManualSessionMetrics() {
-        manualLowestFrequency = nil
-        manualHighestFrequency = nil
     }
 
     private func refreshSuccessLatch(now: Date) {

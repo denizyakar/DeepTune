@@ -11,7 +11,8 @@ struct TunerView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     @State private var session: TunerSession
-    @State private var viewModel: TunerViewModel
+    @State private var autoTuner: AutoTunerViewModel
+    @State private var manualTuner: ManualTunerViewModel
     @State private var permissionManager: PermissionManager
 
     @State private var showSettings = false
@@ -26,7 +27,8 @@ struct TunerView: View {
         // only because TunerView is the root screen and its parent never re-renders.
         let session = TunerSession(instrument: initialInstrument)
         _session = State(initialValue: session)
-        _viewModel = State(initialValue: TunerViewModel(session: session))
+        _autoTuner = State(initialValue: AutoTunerViewModel(session: session))
+        _manualTuner = State(initialValue: ManualTunerViewModel(session: session))
         _permissionManager = State(initialValue: PermissionManager())
     }
 
@@ -42,8 +44,8 @@ struct TunerView: View {
                     }
                     .tag(TunerTab.auto)
                     .onAppear {
-                        if viewModel.targetNote == nil {
-                            viewModel.setTargetNote(session.currentTuning.notes.first)
+                        if autoTuner.targetNote == nil {
+                            autoTuner.setTargetNote(session.currentTuning.notes.first)
                         }
                     }
 
@@ -160,15 +162,15 @@ struct TunerView: View {
 
                     VStack(spacing: 6) {
                         AutoStrobeArea(
-                            centsDistance: viewModel.autoCentsDistance,
-                            targetNote: viewModel.targetNote,
-                            isTuningSuccessful: viewModel.isTuningSuccessful,
-                            isSignalDetected: viewModel.isTargetSignalDetected,
-                            hasPitchReference: session.hasPitchReference
+                            centsDistance: autoTuner.autoCentsDistance,
+                            targetNote: autoTuner.targetNote,
+                            isTuningSuccessful: autoTuner.isTuningSuccessful,
+                            isSignalDetected: autoTuner.isTargetSignalDetected,
+                            hasPitchReference: autoTuner.hasPitchReference
                         )
 
                     HStack {
-                        Text(String(format: "%.1f cents", viewModel.autoCentsDistance))
+                        Text(String(format: "%.1f cents", autoTuner.autoCentsDistance))
                             .font(.headline.weight(.semibold))
                             .foregroundColor(autoFeedbackColor)
 
@@ -181,7 +183,7 @@ struct TunerView: View {
                     .padding(.top, 2)
 
                     autoProgressBar
-                        .opacity(viewModel.isTargetSignalDetected || viewModel.tuneProgressRatio > 0 ? 1.0 : 0.45)
+                        .opacity(autoTuner.isTargetSignalDetected || autoTuner.tuneProgressRatio > 0 ? 1.0 : 0.45)
 
                     HStack {
                         Spacer()
@@ -206,15 +208,15 @@ struct TunerView: View {
 
     private var autoFeedbackColor: Color {
         AppTheme.autoStrobeRampColor(
-            centsDistance: viewModel.autoCentsDistance,
-            isSignalDetected: viewModel.isTargetSignalDetected,
+            centsDistance: autoTuner.autoCentsDistance,
+            isSignalDetected: autoTuner.isTargetSignalDetected,
             visualRangeCents: 80.0
         )
     }
 
     private var autoProgressBar: some View {
         GeometryReader { proxy in
-            let ratio = CGFloat(max(0.0, min(1.0, viewModel.tuneProgressRatio)))
+            let ratio = CGFloat(max(0.0, min(1.0, autoTuner.tuneProgressRatio)))
             let fillWidth = max(CGFloat(6.0), proxy.size.width * ratio)
 
             ZStack(alignment: .leading) {
@@ -239,9 +241,9 @@ struct TunerView: View {
                         .frame(height: 88)
 
                     ManualStrobeArea(
-                        centsDistance: viewModel.manualCentsDistance,
-                        detectedNote: session.detectedNote,
-                        isSignalDetected: session.isSignalDetected
+                        centsDistance: manualTuner.manualCentsDistance,
+                        detectedNote: manualTuner.detectedNote,
+                        isSignalDetected: manualTuner.isSignalDetected
                     )
                     .padding(16)
                     .appCard()
@@ -286,13 +288,13 @@ struct TunerView: View {
             Text("Auto")
                 .font(.caption.weight(.bold))
                 .foregroundColor(AppTheme.textPrimary)
-            Toggle("", isOn: $viewModel.isAutoProgressEnabled)
+            Toggle("", isOn: $autoTuner.isAutoProgressEnabled)
                 .labelsHidden()
                 .tint(AppTheme.accent)
                 .scaleEffect(0.84)
-            Text(viewModel.isAutoProgressEnabled ? "On" : "Off")
+            Text(autoTuner.isAutoProgressEnabled ? "On" : "Off")
                 .font(.caption.weight(.bold))
-                .foregroundColor(viewModel.isAutoProgressEnabled ? AppTheme.success : AppTheme.textTertiary)
+                .foregroundColor(autoTuner.isAutoProgressEnabled ? AppTheme.success : AppTheme.textTertiary)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -306,17 +308,17 @@ struct TunerView: View {
     private var manualInfoPanel: some View {
         VStack(spacing: 14) {
             HStack(alignment: .lastTextBaseline, spacing: 6) {
-                Text(session.detectedNote?.name ?? "--")
+                Text(manualTuner.detectedNote?.name ?? "--")
                     .font(.system(size: 84, weight: .heavy, design: .rounded))
-                    .foregroundColor(session.isSignalDetected ? AppTheme.textPrimary : AppTheme.textTertiary)
+                    .foregroundColor(manualTuner.isSignalDetected ? AppTheme.textPrimary : AppTheme.textTertiary)
 
-                Text(session.detectedNote.map { "\($0.octave)" } ?? "")
+                Text(manualTuner.detectedNote.map { "\($0.octave)" } ?? "")
                     .font(.title3.weight(.bold))
                     .foregroundColor(AppTheme.textSecondary)
             }
 
             Text(
-                session.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
+                manualTuner.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
                     ?? "Play a note to detect frequency"
             )
             .font(.subheadline.weight(.medium))
@@ -325,11 +327,11 @@ struct TunerView: View {
             HStack(spacing: 10) {
                 manualRangeCard(
                     title: "Lowest",
-                    value: viewModel.manualLowestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
+                    value: manualTuner.manualLowestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
                 )
                 manualRangeCard(
                     title: "Highest",
-                    value: viewModel.manualHighestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
+                    value: manualTuner.manualHighestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
                 )
             }
 
@@ -616,12 +618,12 @@ struct TunerView: View {
     private func peg(for note: Note) -> some View {
         PegButton(
             note: note,
-            isActive: viewModel.targetNote == note,
-            isCompleted: viewModel.isNoteCompleted(note)
+            isActive: autoTuner.targetNote == note,
+            isCompleted: autoTuner.isNoteCompleted(note)
         )
         .scaleEffect(pegScale(for: session.currentInstrument.type))
         .onTapGesture {
-            viewModel.setTargetNote(note)
+            autoTuner.setTargetNote(note)
         }
     }
 

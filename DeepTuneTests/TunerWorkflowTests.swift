@@ -25,8 +25,8 @@ private final class MockConductor: TunerConductorType {
 }
 
 @MainActor
-final class TunerViewModelWorkflowTests: XCTestCase {
-    // TunerViewModel persists to UserDefaults on init, so every test needs its own
+final class TunerWorkflowTests: XCTestCase {
+    // The tuner persists to UserDefaults on init, so every test needs its own
     // suite: the default suite is the host app's, and tests would rewrite the user's
     // saved instrument and leak state into each other.
     private func makeIsolatedDefaults() throws -> UserDefaults {
@@ -44,29 +44,33 @@ final class TunerViewModelWorkflowTests: XCTestCase {
     private func makeTuner(
         conductor: MockConductor = MockConductor(),
         defaults: UserDefaults
-    ) -> (session: TunerSession, viewModel: TunerViewModel) {
+    ) -> (session: TunerSession, auto: AutoTunerViewModel, manual: ManualTunerViewModel) {
         let session = TunerSession(
             instrument: InstrumentCatalog.guitar6,
             conductor: conductor,
             userDefaults: defaults
         )
-        return (session, TunerViewModel(session: session, userDefaults: defaults))
+        return (
+            session,
+            AutoTunerViewModel(session: session, userDefaults: defaults),
+            ManualTunerViewModel(session: session)
+        )
     }
 
     func testSwitchingInstrumentAndTuningUpdatesTargetNote() throws {
-        let (session, viewModel) = makeTuner(defaults: try makeIsolatedDefaults())
+        let (session, auto, _) = makeTuner(defaults: try makeIsolatedDefaults())
         let targetTuning = InstrumentCatalog.guitar7DropA
 
         session.setInstrumentAndTuning(instrument: InstrumentCatalog.guitar7, tuning: targetTuning)
 
         XCTAssertEqual(session.currentInstrument.type, .guitar7)
         XCTAssertEqual(session.currentTuning, targetTuning)
-        XCTAssertEqual(viewModel.targetNote?.fullName, targetTuning.notes.first?.fullName)
+        XCTAssertEqual(auto.targetNote?.fullName, targetTuning.notes.first?.fullName)
     }
 
     func testConductorFramesReachTheSession() async throws {
         let mockConductor = MockConductor()
-        let (session, _) = makeTuner(conductor: mockConductor, defaults: try makeIsolatedDefaults())
+        let (session, _, _) = makeTuner(conductor: mockConductor, defaults: try makeIsolatedDefaults())
         mockConductor.emit(pitch: 110.0, amplitude: 0.12)
         mockConductor.finishUpdates()
 
@@ -78,7 +82,7 @@ final class TunerViewModelWorkflowTests: XCTestCase {
     }
 
     func testManualSessionMetricsResetOnModeTransition() throws {
-        let (session, viewModel) = makeTuner(defaults: try makeIsolatedDefaults())
+        let (session, _, manual) = makeTuner(defaults: try makeIsolatedDefaults())
         session.setActiveMode(.manual)
         var timestamp = Date()
 
@@ -87,14 +91,14 @@ final class TunerViewModelWorkflowTests: XCTestCase {
             timestamp.addTimeInterval(0.02)
         }
 
-        XCTAssertNotNil(viewModel.manualLowestFrequency)
-        XCTAssertNotNil(viewModel.manualHighestFrequency)
+        XCTAssertNotNil(manual.manualLowestFrequency)
+        XCTAssertNotNil(manual.manualHighestFrequency)
 
         session.setActiveMode(.auto)
         session.setActiveMode(.manual)
 
-        XCTAssertNil(viewModel.manualLowestFrequency)
-        XCTAssertNil(viewModel.manualHighestFrequency)
+        XCTAssertNil(manual.manualLowestFrequency)
+        XCTAssertNil(manual.manualHighestFrequency)
     }
 
     func testUnselectableInstrumentIsNotRestored() throws {
@@ -120,13 +124,13 @@ final class TunerViewModelWorkflowTests: XCTestCase {
             instrument: InstrumentCatalog.bass4,
             tuning: InstrumentCatalog.bass4DropC
         )
-        first.viewModel.isAutoProgressEnabled = true
+        first.auto.isAutoProgressEnabled = true
 
         let second = makeTuner(defaults: defaults)
 
         XCTAssertEqual(second.session.currentInstrument.type, .bass)
         XCTAssertEqual(second.session.currentTuning.name, InstrumentCatalog.bass4DropC.name)
         XCTAssertEqual(second.session.currentTuning.notes.map(\.fullName), InstrumentCatalog.bass4DropC.notes.map(\.fullName))
-        XCTAssertTrue(second.viewModel.isAutoProgressEnabled)
+        XCTAssertTrue(second.auto.isAutoProgressEnabled)
     }
 }

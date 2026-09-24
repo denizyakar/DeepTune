@@ -32,12 +32,13 @@ final class TunerCharacterizationTests: XCTestCase {
             conductor: SilentConductor(),
             userDefaults: defaults
         )
-        let viewModel = TunerViewModel(session: session, userDefaults: defaults)
+        let auto = AutoTunerViewModel(session: session, userDefaults: defaults)
+        let manual = ManualTunerViewModel(session: session)
         session.setInstrumentAndTuning(
             instrument: InstrumentCatalog.guitar6,
             tuning: InstrumentCatalog.guitar6.defaultTuning
         )
-        viewModel.isAutoProgressEnabled = true
+        auto.isAutoProgressEnabled = true
 
         var trace: [String] = []
         var now = Date(timeIntervalSince1970: 0)
@@ -48,8 +49,8 @@ final class TunerCharacterizationTests: XCTestCase {
             for frame in frames {
                 session.debugInjectFrame(pitch: frame.pitch, amplitude: frame.amplitude, timestamp: now)
                 now.addTimeInterval(frameInterval)
-                trace.append(Self.snapshot(of: session, viewModel, frame: trace.count))
-                reachedSuccess = reachedSuccess || viewModel.isTuningSuccessful
+                trace.append(Self.snapshot(of: session, auto, manual, frame: trace.count))
+                reachedSuccess = reachedSuccess || auto.isTuningSuccessful
                 if let midi = session.detectedNote?.midiNumber { detectedMIDIs.insert(midi) }
             }
         }
@@ -72,7 +73,7 @@ final class TunerCharacterizationTests: XCTestCase {
 
         // Back to auto on the A string, slightly flat.
         session.setActiveMode(.auto)
-        viewModel.setTargetNote(notes[1])
+        auto.setTargetNote(notes[1])
         feed(Self.steady(pitch: 110.0 * pow(2.0, -15.0 / 1200.0), amplitude: 0.1, frames: 60))
 
         // Guards against a script that no longer exercises what it claims to.
@@ -92,24 +93,29 @@ final class TunerCharacterizationTests: XCTestCase {
 
     // MARK: - Trace
 
-    private static func snapshot(of session: TunerSession, _ viewModel: TunerViewModel, frame: Int) -> String {
+    private static func snapshot(
+        of session: TunerSession,
+        _ auto: AutoTunerViewModel,
+        _ manual: ManualTunerViewModel,
+        frame: Int
+    ) -> String {
         let detected = session.detectedNote.map { "\($0.midiNumber)@\(format($0.centsFromEqualTempered))" } ?? "-"
         return [
             "\(frame)",
             "pitch=\(format(session.currentPitch))",
             "amp=\(format(session.currentAmplitude))",
             "sig=\(session.isSignalDetected)",
-            "tsig=\(viewModel.isTargetSignalDetected)",
+            "tsig=\(auto.isTargetSignalDetected)",
             "ref=\(session.hasPitchReference)",
-            "auto=\(format(viewModel.autoCentsDistance))",
-            "ok=\(viewModel.isTuningSuccessful)",
-            "held=\(format(Float(viewModel.inTuneDuration)))",
-            "target=\(viewModel.targetNote?.fullName ?? "-")",
-            "done=\(viewModel.completedNoteIDs.count)",
+            "auto=\(format(auto.autoCentsDistance))",
+            "ok=\(auto.isTuningSuccessful)",
+            "held=\(format(Float(auto.inTuneDuration)))",
+            "target=\(auto.targetNote?.fullName ?? "-")",
+            "done=\(auto.completedNoteIDs.count)",
             "note=\(detected)",
-            "manual=\(format(viewModel.manualCentsDistance))",
-            "lo=\(viewModel.manualLowestFrequency.map(format) ?? "-")",
-            "hi=\(viewModel.manualHighestFrequency.map(format) ?? "-")",
+            "manual=\(format(manual.manualCentsDistance))",
+            "lo=\(manual.manualLowestFrequency.map(format) ?? "-")",
+            "hi=\(manual.manualHighestFrequency.map(format) ?? "-")",
         ].joined(separator: " ")
     }
 
