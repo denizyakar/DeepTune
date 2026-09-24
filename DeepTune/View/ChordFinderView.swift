@@ -5,12 +5,11 @@ struct ChordFinderView: View {
 
     @State private var model: ChordFinderViewModel
 
-    // The tuner view model is only needed to build the chord finder's own model.
-    // Storing it as @ObservedObject would re-render this view on every audio frame
-    // even though the body never reads it.
-    init(viewModel: TunerViewModel, isSessionActive: Binding<Bool>) {
+    // The tuner session is only needed to build the chord finder's own model,
+    // so it isn't stored.
+    init(session: TunerSession, isSessionActive: Binding<Bool>) {
         self._isSessionActive = isSessionActive
-        self._model = State(initialValue: ChordFinderViewModel(audioSource: viewModel))
+        self._model = State(initialValue: ChordFinderViewModel(audioSource: session))
     }
 
     private struct SuggestionDisplayRow: Identifiable {

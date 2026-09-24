@@ -1,11 +1,11 @@
 import SwiftUI
 
 struct TuningPickerView: View {
-    @ObservedObject var viewModel: TunerViewModel
+    let session: TunerSession
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        let instrument = viewModel.currentInstrument
+        let instrument = session.currentInstrument
 
         NavigationStack {
             List {
@@ -40,7 +40,7 @@ struct TuningPickerView: View {
 
     private func tuningRow(instrument: Instrument, tuning: Tuning) -> some View {
         Button {
-            viewModel.setInstrumentAndTuning(instrument: instrument, tuning: tuning)
+            session.setInstrumentAndTuning(instrument: instrument, tuning: tuning)
             dismiss()
         } label: {
             HStack {
@@ -52,7 +52,7 @@ struct TuningPickerView: View {
                         .foregroundColor(AppTheme.textSecondary)
                 }
                 Spacer()
-                if viewModel.currentInstrument == instrument && viewModel.currentTuning == tuning {
+                if session.currentInstrument == instrument && session.currentTuning == tuning {
                     Image(systemName: "checkmark")
                         .foregroundColor(AppTheme.accent)
                 }

@@ -56,7 +56,8 @@ enum TunerDiagnostics {
         duration: Double = 8.0,
         frameRate: Double = 50.0
     ) -> TunerDiagnosticsReport {
-        let viewModel = TunerViewModel()
+        let session = TunerSession()
+        let viewModel = AutoTunerViewModel(session: session)
         viewModel.setTargetNote(target)
         
         let dt = 1.0 / frameRate
@@ -73,7 +74,7 @@ enum TunerDiagnostics {
             let signal = syntheticPluckSignal(time: t, targetFrequency: Float(target.frequency))
             
             #if DEBUG
-            viewModel.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
+            session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
             #endif
             
             let currentCents = viewModel.autoCentsDistance
@@ -104,9 +105,9 @@ enum TunerDiagnostics {
         frameRate: Double = 60.0,
         profile: ManualSignalProfile = .harmonicStress
     ) -> ManualTunerDiagnosticsReport {
-        let viewModel = TunerViewModel()
-        viewModel.setActiveMode(.manual)
-        viewModel.setTargetNote(nil)
+        let session = TunerSession()
+        let viewModel = ManualTunerViewModel(session: session)
+        session.setActiveMode(.manual)
         
         let dt = 1.0 / frameRate
         let frameCount = Int(duration * frameRate)
@@ -124,14 +125,14 @@ enum TunerDiagnostics {
             let signal = syntheticManualSignal(time: t, targetFrequency: Float(target.frequency), profile: profile)
             
             #if DEBUG
-            viewModel.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
+            session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
             #endif
             
-            if !viewModel.isSignalDetected {
+            if !session.isSignalDetected {
                 signalDropCount += 1
             }
             
-            if let detected = viewModel.detectedNote, "\(detected.name)\(detected.octave)" != target.fullName {
+            if let detected = session.detectedNote, "\(detected.name)\(detected.octave)" != target.fullName {
                 noteFlipCount += 1
             }
             
@@ -190,8 +191,9 @@ enum TunerDiagnostics {
         var falseLockCount = 0
         
         for note in notes {
-            let vm = TunerViewModel(instrument: instrument)
-            vm.setActiveMode(.auto)
+            let session = TunerSession(instrument: instrument)
+            let vm = AutoTunerViewModel(session: session)
+            session.setActiveMode(.auto)
             vm.setTargetNote(note)
             
             var now = Date(timeIntervalSince1970: 0)
@@ -203,7 +205,7 @@ enum TunerDiagnostics {
                 let signal = syntheticPluckSignal(time: t, targetFrequency: Float(note.frequency))
                 
                 #if DEBUG
-                vm.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
+                session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
                 #endif
                 
                 if signal.pitch > 0, !vm.isTargetSignalDetected {
@@ -277,8 +279,9 @@ enum TunerDiagnostics {
         ]
         
         for (idx, wrongFrequency) in wrongFrequencies.enumerated() {
-            let vm = TunerViewModel(instrument: instrument)
-            vm.setActiveMode(.auto)
+            let session = TunerSession(instrument: instrument)
+            let vm = AutoTunerViewModel(session: session)
+            session.setActiveMode(.auto)
             vm.setTargetNote(target)
             
             let dt = 1.0 / frameRate
@@ -294,7 +297,7 @@ enum TunerDiagnostics {
                 let pitch = wrongFrequency * pow(2.0, jitterCents / 1200.0)
                 
                 #if DEBUG
-                vm.debugInjectFrame(pitch: pitch, amplitude: amplitude, timestamp: now)
+                session.debugInjectFrame(pitch: pitch, amplitude: amplitude, timestamp: now)
                 #endif
                 
                 if vm.isTuningSuccessful {
