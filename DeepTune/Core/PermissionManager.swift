@@ -37,35 +37,20 @@ final class PermissionManager {
             return
         }
 
-        let handler: @Sendable (Bool) -> Void = { granted in
-            Task { @MainActor [weak self] in
-                self?.microphonePermission = granted ? .granted : .denied
-                completion(granted)
-            }
-        }
-
-        if #available(iOS 17.0, *) {
-            AVAudioApplication.requestRecordPermission(completionHandler: handler)
-        } else {
-            AVAudioSession.sharedInstance().requestRecordPermission(handler)
+        // The main-actor task keeps the manager alive only until the user answers.
+        Task {
+            let granted = await AVAudioApplication.requestRecordPermission()
+            microphonePermission = granted ? .granted : .denied
+            completion(granted)
         }
     }
 
     private static func currentPermission() -> MicrophonePermission {
-        if #available(iOS 17.0, *) {
-            switch AVAudioApplication.shared.recordPermission {
-            case .granted: return .granted
-            case .denied: return .denied
-            case .undetermined: return .undetermined
-            @unknown default: return .undetermined
-            }
-        } else {
-            switch AVAudioSession.sharedInstance().recordPermission {
-            case .granted: return .granted
-            case .denied: return .denied
-            case .undetermined: return .undetermined
-            @unknown default: return .undetermined
-            }
+        switch AVAudioApplication.shared.recordPermission {
+        case .granted: return .granted
+        case .denied: return .denied
+        case .undetermined: return .undetermined
+        @unknown default: return .undetermined
         }
     }
 }
