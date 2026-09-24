@@ -43,7 +43,7 @@ enum TunerSessionEvent {
 final class TunerSession {
     private enum PersistenceKey {
         static let instrumentType = "DeepTune.selectedInstrumentType"
-        static let tuningSignature = "DeepTune.selectedTuningSignature"
+        static let tuningID = "DeepTune.selectedTuningID"
     }
 
     private(set) var currentInstrument: Instrument
@@ -274,7 +274,7 @@ final class TunerSession {
 
     private func persistSelection() {
         userDefaults.set(currentInstrument.type.persistenceKey, forKey: PersistenceKey.instrumentType)
-        userDefaults.set(Self.tuningSignature(for: currentTuning), forKey: PersistenceKey.tuningSignature)
+        userDefaults.set(currentTuning.id, forKey: PersistenceKey.tuningID)
     }
 
     private static func restoreInstrument(from userDefaults: UserDefaults) -> Instrument? {
@@ -287,16 +287,11 @@ final class TunerSession {
     }
 
     private static func restoreTuning(for instrument: Instrument, from userDefaults: UserDefaults) -> Tuning? {
-        guard let persistedSignature = userDefaults.string(forKey: PersistenceKey.tuningSignature) else {
+        guard let persistedID = userDefaults.string(forKey: PersistenceKey.tuningID) else {
             return nil
         }
 
-        return instrument.availableTunings.first { tuningSignature(for: $0) == persistedSignature }
-    }
-
-    private static func tuningSignature(for tuning: Tuning) -> String {
-        let noteSignature = tuning.notes.map(\.fullName).joined(separator: ",")
-        return "\(tuning.name)|\(noteSignature)"
+        return instrument.availableTunings.first { $0.id == persistedID }
     }
 }
 

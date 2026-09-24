@@ -1,6 +1,6 @@
 import Foundation
 
-enum InstrumentType: String, CaseIterable, Equatable {
+enum InstrumentType: String, CaseIterable, Hashable {
     case guitar6 = "6-String Guitar"
     case guitar7 = "7-String Guitar"
     case guitar8 = "8-String Guitar"
@@ -9,10 +9,11 @@ enum InstrumentType: String, CaseIterable, Equatable {
 }
 
 struct Instrument: Identifiable, Hashable {
-    let id = UUID()
     let type: InstrumentType
     let defaultTuning: Tuning
     let availableTunings: [Tuning]
+
+    var id: InstrumentType { type }
     
     var name: String {
         return type.rawValue
