@@ -23,6 +23,8 @@ final class AutoTunerViewModel {
     private(set) var completedNoteIDs = Set<UUID>()
 
     var hasPitchReference: Bool { session.hasPitchReference }
+    var currentInstrument: Instrument { session.currentInstrument }
+    var currentTuning: Tuning { session.currentTuning }
 
     private let userDefaults: UserDefaults
 
