@@ -1,4 +1,5 @@
 import Foundation
+@testable import DeepTune
 
 struct RegressionCheck: Identifiable {
     let id = UUID()
@@ -21,8 +22,9 @@ struct RegressionSuiteResult {
     }
 }
 
+@MainActor
 enum TunerRegressionSuite {
-    // Mirrors codex-rules/TUNER_QUALITY_BAR.md so the same quality bar is executable.
+    // Mirrors claude-rules/TUNER_QUALITY_BAR.md so the same quality bar is executable.
     private static let lockSuccessRateMin = 0.90
     private static let averageLockSecondsMax = 12.0
     private static let falseLockRateMax = 0.02

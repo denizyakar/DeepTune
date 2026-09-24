@@ -1,15 +1,6 @@
 import XCTest
 @testable import DeepTune
 
-private final class SilentConductor: TunerConductorType {
-    func pitchUpdates() -> AsyncStream<PitchData> { AsyncStream { $0.finish() } }
-    func start() {}
-    func stop() {}
-    func setTrackingTargetFrequency(_ frequency: Float?) {}
-    func recentAudioWindow(duration: TimeInterval) -> AudioSampleWindow? { nil }
-    func setRecentAudioCaptureEnabled(_ enabled: Bool) {}
-}
-
 /// Pins the tuner's frame-by-frame output for a fixed script of synthetic frames.
 ///
 /// This is a safety net for refactors that must not change behaviour: every
