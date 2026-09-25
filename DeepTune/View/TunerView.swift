@@ -90,6 +90,7 @@ struct TunerView: View {
         }
         .onDisappear {
             session.stop()
+            UIApplication.shared.isIdleTimerDisabled = false
         }
         .task {
             await session.processPitchUpdates()
@@ -124,11 +125,15 @@ struct TunerView: View {
     }
 
     private func synchronizeAudioState() {
-        if shouldRunAudioEngine {
+        let shouldRun = shouldRunAudioEngine
+        if shouldRun {
             session.start()
         } else {
             session.stop()
         }
+        // Both hands are on the instrument while tuning, so the screen would
+        // otherwise lock mid-session. Set here so it can never outlive the engine.
+        UIApplication.shared.isIdleTimerDisabled = shouldRun
     }
 
     private func ensureMicrophonePermission() {
