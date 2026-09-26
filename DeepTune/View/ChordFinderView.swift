@@ -32,17 +32,8 @@ struct ChordFinderView: View {
                 .foregroundColor(AppTheme.textSecondary)
 
             HStack(spacing: 10) {
-                Button(action: toggleSession) {
-                    Text(isSessionActive ? "Stop" : "Start")
-                        .font(.headline.weight(.semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(isSessionActive ? AppTheme.danger : AppTheme.accent)
-                        )
-                        .foregroundColor(.white)
-                }
+                Button(isSessionActive ? "Stop" : "Start", action: toggleSession)
+                    .buttonStyle(.primary(tint: isSessionActive ? AppTheme.danger : AppTheme.accent))
 
                 statusBadge
             }
