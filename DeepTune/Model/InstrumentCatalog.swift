@@ -54,8 +54,8 @@ struct InstrumentCatalog {
 
     static let guitar6TuningGroups: [TuningGroup] = [
         TuningGroup(
-            title: "Common",
-            subtitle: "Everyday rock, metal, alternative and cover workflows",
+            title: String(localized: "Common"),
+            subtitle: String(localized: "Everyday rock, metal, alternative and cover workflows"),
             tunings: [
                 guitar6EStandard,
                 guitar6EbStandard,
@@ -71,8 +71,8 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Heavy Drops",
-            subtitle: "Requires heavier gauge strings and setup awareness",
+            title: String(localized: "Heavy Drops"),
+            subtitle: String(localized: "Requires heavier gauge strings and setup awareness"),
             tunings: [
                 guitar6DropGSharp,
                 guitar6DropG,
@@ -80,8 +80,8 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Niche / Genre",
-            subtitle: "Midwest emo, alt, shoegaze and math-inspired tunings",
+            title: String(localized: "Niche / Genre"),
+            subtitle: String(localized: "Midwest emo, alt, shoegaze and math-inspired tunings"),
             tunings: [
                 guitar6FACGCE,
                 guitar6DAEACSharpE,
@@ -89,8 +89,8 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Roots / Slide",
-            subtitle: "Blues, country, folk and celtic-leaning open tunings",
+            title: String(localized: "Roots / Slide"),
+            subtitle: String(localized: "Blues, country, folk and celtic-leaning open tunings"),
             tunings: [
                 guitar6OpenD,
                 guitar6OpenG,
@@ -110,8 +110,8 @@ struct InstrumentCatalog {
 
     static let guitar7TuningGroups: [TuningGroup] = [
         TuningGroup(
-            title: "Common",
-            subtitle: "Modern metal and progressive 7-string standards",
+            title: String(localized: "Common"),
+            subtitle: String(localized: "Modern metal and progressive 7-string standards"),
             tunings: [
                 guitar7BStandard,
                 guitar7DropA,
@@ -119,16 +119,16 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Heavy Drops",
-            subtitle: "Extended-range low tunings for modern rhythm work",
+            title: String(localized: "Heavy Drops"),
+            subtitle: String(localized: "Extended-range low tunings for modern rhythm work"),
             tunings: [
                 guitar7DropG,
                 guitar7DropFSharp
             ]
         ),
         TuningGroup(
-            title: "Niche / Experimental",
-            subtitle: "Ambient and drone-friendly 7-string layouts",
+            title: String(localized: "Niche / Experimental"),
+            subtitle: String(localized: "Ambient and drone-friendly 7-string layouts"),
             tunings: [
                 guitar7OpenC,
                 guitar7DADGADA
@@ -147,8 +147,8 @@ struct InstrumentCatalog {
 
     static let bass4TuningGroups: [TuningGroup] = [
         TuningGroup(
-            title: "Common",
-            subtitle: "Most-used studio and live bass workflows",
+            title: String(localized: "Common"),
+            subtitle: String(localized: "Most-used studio and live bass workflows"),
             tunings: [
                 bass4EStandard,
                 bass4EbStandard,
@@ -157,8 +157,8 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Niche / Heavy",
-            subtitle: "Down-tuned and alternate-range 4-string options",
+            title: String(localized: "Niche / Heavy"),
+            subtitle: String(localized: "Down-tuned and alternate-range 4-string options"),
             tunings: [
                 bass4CStandard,
                 bass4DropC,
@@ -177,8 +177,8 @@ struct InstrumentCatalog {
 
     static let ukulele4TuningGroups: [TuningGroup] = [
         TuningGroup(
-            title: "Common",
-            subtitle: "Core uke setups that remain ascending in pitch",
+            title: String(localized: "Common"),
+            subtitle: String(localized: "Core uke setups that remain ascending in pitch"),
             tunings: [
                 ukulele4CLowG,
                 ukulele4DLowA,
@@ -186,8 +186,8 @@ struct InstrumentCatalog {
             ]
         ),
         TuningGroup(
-            title: "Niche / Creative",
-            subtitle: "Open and drone-inspired ukulele tunings",
+            title: String(localized: "Niche / Creative"),
+            subtitle: String(localized: "Open and drone-inspired ukulele tunings"),
             tunings: [
                 ukulele4OpenC,
                 ukulele4OpenD,
@@ -209,7 +209,7 @@ struct InstrumentCatalog {
         case .guitar8:
             return [
                 TuningGroup(
-                    title: "Available",
+                    title: String(localized: "Available"),
                     subtitle: nil,
                     tunings: instrument.availableTunings
                 )

@@ -32,9 +32,9 @@ enum AppTheme {
     }
 
     static func feedbackLabel(centsDistance: Float, isSignalDetected: Bool, isTuningSuccessful: Bool) -> String {
-        guard isSignalDetected else { return "No Signal" }
-        if isTuningSuccessful { return "In Tune" }
-        return centsDistance >= 0 ? "Sharp" : "Flat"
+        guard isSignalDetected else { return String(localized: "No Signal") }
+        if isTuningSuccessful { return String(localized: "In Tune") }
+        return centsDistance >= 0 ? String(localized: "Sharp") : String(localized: "Flat")
     }
 
     // Maps pitch distance to a continuous red->green spectrum.

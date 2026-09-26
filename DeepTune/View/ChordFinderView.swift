@@ -109,7 +109,7 @@ struct ChordFinderView: View {
     }
 
     private var statusBadge: some View {
-        let label: String
+        let label: LocalizedStringKey
         let color: Color
 
         switch model.phase {
@@ -225,9 +225,9 @@ struct ChordFinderView: View {
 
     private func primaryRootLine(for result: ChordFinderViewModel.ChordMatch) -> String {
         if let bass = result.bassNoteName {
-            return "Root: \(result.rootName) • Lowest note: \(bass)"
+            return String(localized: "Root: \(result.rootName) • Lowest note: \(bass)")
         }
-        return "Root: \(result.rootName)"
+        return String(localized: "Root: \(result.rootName)")
     }
 
     private func uniqueCandidates(for result: ChordFinderViewModel.ChordMatch) -> [ChordFinderViewModel.ChordSuggestion] {
@@ -254,8 +254,8 @@ struct ChordFinderView: View {
                 if shouldMergeAsOr(current: current, next: next) {
                     rows.append(
                         SuggestionDisplayRow(
-                            title: "\(current.name) or \(next.name)",
-                            rootLine: "Root: \(current.rootName) or \(next.rootName)",
+                            title: String(localized: "\(current.name) or \(next.name)"),
+                            rootLine: String(localized: "Root: \(current.rootName) or \(next.rootName)"),
                             confidence: max(current.confidence, next.confidence)
                         )
                     )
@@ -267,7 +267,7 @@ struct ChordFinderView: View {
             rows.append(
                 SuggestionDisplayRow(
                     title: current.name,
-                    rootLine: "Root: \(current.rootName)",
+                    rootLine: String(localized: "Root: \(current.rootName)"),
                     confidence: current.confidence
                 )
             )

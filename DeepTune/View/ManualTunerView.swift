@@ -49,21 +49,18 @@ private struct ManualInfoPanel: View {
                     .foregroundColor(AppTheme.textSecondary)
             }
 
-            Text(
-                model.detectedNote.map { String(format: "Nearest %.2f Hz", $0.nearestFrequency) }
-                    ?? "Play a note to detect frequency"
-            )
+            Text(nearestLabel)
             .font(.subheadline.weight(.medium))
             .foregroundColor(AppTheme.textSecondary)
 
             HStack(spacing: 10) {
                 ManualRangeCard(
                     title: "Lowest",
-                    value: model.manualLowestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
+                    value: model.manualLowestFrequency.map(Self.hertz) ?? "--"
                 )
                 ManualRangeCard(
                     title: "Highest",
-                    value: model.manualHighestFrequency.map { String(format: "%.2f Hz", $0) } ?? "--"
+                    value: model.manualHighestFrequency.map(Self.hertz) ?? "--"
                 )
             }
 
@@ -74,10 +71,19 @@ private struct ManualInfoPanel: View {
                 .padding(.horizontal, 8)
         }
     }
+
+    private var nearestLabel: LocalizedStringKey {
+        guard let note = model.detectedNote else { return "Play a note to detect frequency" }
+        return "Nearest \(note.nearestFrequency, format: .number.precision(.fractionLength(2))) Hz"
+    }
+
+    private static func hertz(_ frequency: Float) -> String {
+        String(localized: "\(frequency, format: .number.precision(.fractionLength(2))) Hz")
+    }
 }
 
 private struct ManualRangeCard: View {
-    let title: String
+    let title: LocalizedStringKey
     let value: String
 
     var body: some View {

@@ -55,7 +55,7 @@ private struct AutoMeterView: View {
             )
 
             HStack {
-                Text(String(format: "%.1f cents", model.autoCentsDistance))
+                Text("\(model.autoCentsDistance, format: .number.precision(.fractionLength(1))) cents")
                     .font(.headline.weight(.semibold))
                     .foregroundColor(feedbackColor)
 
