@@ -148,13 +148,7 @@ private struct AutoModeDemo: View {
             VStack(alignment: .leading, spacing: 10) {
                 DemoCaption(title: "Auto", detail: "Moves to the next string once it’s in tune")
 
-                AutoStrobeArea(
-                    centsDistance: cents,
-                    targetNote: note,
-                    isTuningSuccessful: isInTune,
-                    isSignalDetected: true,
-                    hasPitchReference: true
-                )
+                StrobeMeter(centsDistance: cents, noteLabel: note.fullName, isSignalDetected: true)
             }
             .padding(16)
             .appCard()
