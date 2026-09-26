@@ -17,9 +17,8 @@ nonisolated private let logger = Logger(subsystem: Bundle.main.bundleIdentifier 
 
 // Calculates frequency (pitch) and amplitude of the incoming audio signal
 class TunerConductor: TunerConductorType {
-    // Every mutation is published, as @Published did before: the paths that set
-    // pitch and amplitude on separate lines emit twice per frame. Downstream
-    // smoothing was tuned against that, so it is kept until smoothing is revisited.
+    // Every assignment is published, so each frame must assign the whole value
+    // once; setting pitch and amplitude separately would emit a half-updated frame.
     private var data = PitchData() {
         didSet { pitchContinuation?.yield(data) }
     }
@@ -350,8 +349,7 @@ class TunerConductor: TunerConductorType {
         lastAcceptedPitch = resolved.pitch
         lastAcceptedAt = now
 
-        self.data.pitch = resolved.pitch
-        self.data.amplitude = smoothedAmplitude
+        self.data = PitchData(pitch: resolved.pitch, amplitude: smoothedAmplitude)
     }
 
     private struct ResolvedPitchCandidate {
@@ -422,8 +420,7 @@ class TunerConductor: TunerConductorType {
             return
         }
         
-        self.data.pitch = lastAcceptedPitch
-        self.data.amplitude = max(smoothedAmplitude * 0.65, 0.005)
+        self.data = PitchData(pitch: lastAcceptedPitch, amplitude: max(smoothedAmplitude * 0.65, 0.005))
     }
 
     private func resolvedTrackablePitchBounds(isTargetedTracking: Bool) -> ClosedRange<Float> {
