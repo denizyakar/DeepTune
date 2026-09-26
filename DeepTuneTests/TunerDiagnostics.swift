@@ -188,7 +188,8 @@ enum TunerDiagnostics {
     static func runAutoValidationSuite(
         instrument: Instrument = InstrumentCatalog.guitar6,
         timeoutSeconds: Double = 8.0,
-        frameRate: Double = 60.0
+        frameRate: Double = 60.0,
+        smoothing: CentsSmoother.Configuration = .standard
     ) -> AutoValidationReport {
         let notes = instrument.defaultTuning.notes
         let dt = 1.0 / frameRate
@@ -203,7 +204,7 @@ enum TunerDiagnostics {
         
         for note in notes {
             let (session, defaults) = makeSession(instrument: instrument)
-            let vm = AutoTunerViewModel(session: session, userDefaults: defaults)
+            let vm = AutoTunerViewModel(session: session, userDefaults: defaults, smoothing: smoothing)
             session.setActiveMode(.auto)
             vm.setTargetNote(note)
             
@@ -238,7 +239,7 @@ enum TunerDiagnostics {
                 lockTimes.append(lockTime)
             }
             
-            falseLockCount += runAutoFalseLockTrial(target: note, instrument: instrument, frameRate: frameRate)
+            falseLockCount += runAutoFalseLockTrial(target: note, instrument: instrument, frameRate: frameRate, smoothing: smoothing)
         }
         
         let successRate = Double(lockSuccessCount) / Double(max(1, notes.count))
@@ -309,7 +310,12 @@ enum TunerDiagnostics {
         return (pitch: frequency, amplitude: amplitude)
     }
 
-    private static func runAutoFalseLockTrial(target: Note, instrument: Instrument, frameRate: Double) -> Int {
+    private static func runAutoFalseLockTrial(
+        target: Note,
+        instrument: Instrument,
+        frameRate: Double,
+        smoothing: CentsSmoother.Configuration
+    ) -> Int {
         let wrongFrequencies: [Float] = [
             Float(target.frequency) * pow(2.0, 100.0 / 1200.0), // near-note mismatch
             Float(target.frequency) * 0.75 // 3/4 ratio trap (e.g. E4 <-> B3 class issue)
@@ -317,7 +323,7 @@ enum TunerDiagnostics {
         
         for (idx, wrongFrequency) in wrongFrequencies.enumerated() {
             let (session, defaults) = makeSession(instrument: instrument)
-            let vm = AutoTunerViewModel(session: session, userDefaults: defaults)
+            let vm = AutoTunerViewModel(session: session, userDefaults: defaults, smoothing: smoothing)
             session.setActiveMode(.auto)
             vm.setTargetNote(target)
             

@@ -63,16 +63,18 @@ final class TunerSession {
     @ObservationIgnored private var eventHandlers: [(TunerSessionEvent) -> Void] = []
 
     private let calibration = PitchCalibration.standard
-    private let pitchSmoothingFactor: Float = 0.2
+    // In seconds, so the reading doesn't depend on the frame rate. Derived from
+    // the per-event values tuned on device at about 23 readings a second.
+    private let pitchTimeConstant: TimeInterval = 0.19
     private let signalHoldDuration: TimeInterval = 1.0
-    private let noteSwitchRequiredFrames = 4
+    private let noteSwitchRequiredDuration: TimeInterval = 0.17
 
     private var smoothedPitch: Float = 0.0
     private var lastProcessFrameAt: Date?
     private var lastLiveSignalAt: Date?
     private var stableMIDI: Int?
     private var candidateMIDI: Int?
-    private var candidateStreak = 0
+    private var candidateSince: Date?
     // Read from deinit, which can't go through observation-tracked accessors.
     @ObservationIgnored private var isConductorRunning = false
 
@@ -184,9 +186,19 @@ final class TunerSession {
         isSignalDetected = true
         hasPitchReference = true
         lastLiveSignalAt = now
-        smoothedPitch = smoothedPitch == 0 ? pitch : smoothed(previous: smoothedPitch, current: pitch, factor: pitchSmoothingFactor)
+        smoothedPitch = smoothedPitch == 0
+            ? pitch
+            : smoothed(
+                previous: smoothedPitch,
+                current: pitch,
+                factor: smoothingFactor(elapsed: frameDelta, timeConstant: pitchTimeConstant)
+            )
 
-        let stabilizedNote = stabilizeDetectedNote(with: detectNearestNote(for: smoothedPitch), frequency: smoothedPitch)
+        let stabilizedNote = stabilizeDetectedNote(
+            with: detectNearestNote(for: smoothedPitch),
+            frequency: smoothedPitch,
+            now: now
+        )
         detectedNote = stabilizedNote
         publish(.frame(.live(pitch: smoothedPitch, note: stabilizedNote, frameDelta: frameDelta, now: now)))
     }
@@ -202,12 +214,12 @@ final class TunerSession {
         return noteFromMIDI(Int(midi.rounded()), frequency: frequency)
     }
 
-    // Prevents one-frame note flips by requiring short consistency before switching labels.
-    private func stabilizeDetectedNote(with raw: DetectedNote, frequency: Float) -> DetectedNote {
+    // Prevents brief note flips by requiring a new note to hold before switching labels.
+    private func stabilizeDetectedNote(with raw: DetectedNote, frequency: Float, now: Date) -> DetectedNote {
         if stableMIDI == nil {
             stableMIDI = raw.midiNumber
             candidateMIDI = nil
-            candidateStreak = 0
+            candidateSince = nil
             return raw
         }
 
@@ -216,27 +228,25 @@ final class TunerSession {
         if abs(raw.midiNumber - stableMIDI).isMultiple(of: 12),
            abs(raw.centsFromEqualTempered) < 20.0 {
             candidateMIDI = nil
-            candidateStreak = 0
+            candidateSince = nil
             return noteFromMIDI(stableMIDI, frequency: frequency)
         }
 
         if raw.midiNumber == stableMIDI {
             candidateMIDI = nil
-            candidateStreak = 0
+            candidateSince = nil
             return noteFromMIDI(stableMIDI, frequency: frequency)
         }
 
-        if candidateMIDI == raw.midiNumber {
-            candidateStreak += 1
-        } else {
+        if candidateMIDI != raw.midiNumber {
             candidateMIDI = raw.midiNumber
-            candidateStreak = 1
+            candidateSince = now
         }
 
-        if candidateStreak >= noteSwitchRequiredFrames {
+        if let candidateSince, now.timeIntervalSince(candidateSince) >= noteSwitchRequiredDuration {
             self.stableMIDI = raw.midiNumber
             candidateMIDI = nil
-            candidateStreak = 0
+            self.candidateSince = nil
             return noteFromMIDI(raw.midiNumber, frequency: frequency)
         }
 
