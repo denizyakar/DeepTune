@@ -1,0 +1,18 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "Shown in the system microphone permission prompt.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "DeepTune listens to your instrument to find its pitch. Audio is processed on your device and never saved."
+          }
+        }
+      }
+    }
+  },
+  "version" : "1.0"
+}

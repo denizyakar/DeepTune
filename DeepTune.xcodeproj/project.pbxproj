@@ -350,7 +350,7 @@
 				DEVELOPMENT_TEAM = 8356NA7XBK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune needs to access the microphone to tune your guitar.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune listens to your instrument to find its pitch. Audio is processed on your device and never saved.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -385,7 +385,7 @@
 				DEVELOPMENT_TEAM = 8356NA7XBK;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune needs to access the microphone to tune your guitar.";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "DeepTune listens to your instrument to find its pitch. Audio is processed on your device and never saved.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

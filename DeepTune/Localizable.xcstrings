@@ -1,0 +1,88 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+      "shouldTranslate" : false
+    },
+    "%@ • %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ • %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%@%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$lld"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%lld" : {
+      "shouldTranslate" : false
+    },
+    "%lld tuning options" : {},
+    "%lld%%" : {
+      "shouldTranslate" : false
+    },
+    "%lld-string" : {},
+    "%lld. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld. %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "--" : {
+      "shouldTranslate" : false
+    },
+    "Allow Microphone" : {},
+    "Auto" : {},
+    "Captured: %lld" : {},
+    "Chord" : {},
+    "Chord Finder" : {},
+    "Confidence: %lld%%" : {},
+    "DeepTune" : {},
+    "DeepTune needs your microphone" : {},
+    "Detected Chord" : {},
+    "Done" : {},
+    "It listens to your instrument to find its pitch. Audio is processed on your device and never saved." : {},
+    "ML model not found in bundle (nmp.mlpackage/mlmodelc). Running fallback detector." : {},
+    "Manual" : {},
+    "Manual Strobe" : {},
+    "Manual mode follows the note you play instead of the selected tuning string." : {},
+    "Microphone access is off" : {},
+    "NO SIGNAL" : {},
+    "No chord analyzed yet" : {},
+    "Observed notes: %@" : {},
+    "Off" : {},
+    "On" : {},
+    "Open Settings" : {},
+    "Play a note to start" : {},
+    "Preparing chord model..." : {},
+    "Progress" : {},
+    "Ready: play one chord now" : {},
+    "Select Instrument" : {},
+    "Select Tuning" : {},
+    "Start" : {},
+    "Stop" : {},
+    "Tap Start, play one chord once, then wait." : {},
+    "Tip: For best accuracy, let the chord ring for a short moment and avoid changing chords while WAIT is visible." : {},
+    "Top Suggestions" : {},
+    "Turn on Microphone for DeepTune in Settings to start tuning." : {},
+    "WAIT - analyzing..." : {}
+  },
+  "version" : "1.0"
+}
