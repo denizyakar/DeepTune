@@ -23,7 +23,7 @@ struct HeadstockView: View {
 
             ZStack {
                 ZStack(alignment: .topLeading) {
-                    Image(headstockAssetName(for: model.currentInstrument.type))
+                    Image(model.currentInstrument.type.headstockImageName)
                         .resizable()
                         .scaledToFill()
                         .frame(
@@ -78,19 +78,6 @@ struct HeadstockView: View {
                     }
                 }
             }
-        }
-    }
-
-    private func headstockAssetName(for type: InstrumentType) -> String {
-        switch type {
-        case .guitar6:
-            return "Guitar6Headstock"
-        case .guitar7, .guitar8:
-            return "Guitar7Headstock"
-        case .bass:
-            return "Bass4Headstock"
-        case .ukulele:
-            return "Ukulele4Headstock"
         }
     }
 
