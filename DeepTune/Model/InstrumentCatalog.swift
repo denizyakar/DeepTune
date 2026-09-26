@@ -252,4 +252,9 @@ struct InstrumentCatalog {
     /// unfinished, so it stays out of the picker — and out of restored state,
     /// which would otherwise put the app in a mode it offers no way to reach.
     static let selectableInstruments: [Instrument] = allInstruments.filter { $0.type != .guitar7 }
+
+    /// Every tuning the user can choose, across all selectable instruments.
+    static var selectableTuningCount: Int {
+        selectableInstruments.reduce(0) { $0 + $1.availableTunings.count }
+    }
 }
