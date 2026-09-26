@@ -33,6 +33,7 @@ struct OnboardingView: View {
                         .foregroundStyle(AppTheme.textSecondary)
                         .opacity(isLastPage ? 0 : 1)
                         .disabled(isLastPage)
+                        .accessibilityHidden(isLastPage)
                 }
                 .padding(.horizontal, 24)
                 .frame(height: 44)
@@ -66,6 +67,7 @@ struct OnboardingView: View {
                     .frame(height: 36)
                     .opacity(page == .microphone ? 1 : 0)
                     .disabled(page != .microphone)
+                    .accessibilityHidden(page != .microphone)
                     .padding(.bottom, 4)
             }
         }
