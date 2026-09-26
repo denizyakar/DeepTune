@@ -86,7 +86,7 @@ enum TunerDiagnostics {
         
         for frame in 0..<frameCount {
             let t = Double(frame) * dt
-            let signal = syntheticPluckSignal(time: t, targetFrequency: Float(target.frequency))
+            let signal = bufferAveraged(at: t, frameDuration: dt) { syntheticPluckSignal(time: $0, targetFrequency: Float(target.frequency)) }
             
             session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
             
@@ -135,7 +135,7 @@ enum TunerDiagnostics {
         
         for frame in 0..<frameCount {
             let t = Double(frame) * dt
-            let signal = syntheticManualSignal(time: t, targetFrequency: Float(target.frequency), profile: profile)
+            let signal = bufferAveraged(at: t, frameDuration: dt) { syntheticManualSignal(time: $0, targetFrequency: Float(target.frequency), profile: profile) }
             
             session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
             
@@ -213,7 +213,7 @@ enum TunerDiagnostics {
             
             for frame in 0..<frameCount {
                 let t = Double(frame) * dt
-                let signal = syntheticPluckSignal(time: t, targetFrequency: Float(note.frequency))
+                let signal = bufferAveraged(at: t, frameDuration: dt) { syntheticPluckSignal(time: $0, targetFrequency: Float(note.frequency)) }
                 
                 session.debugInjectFrame(pitch: signal.pitch, amplitude: signal.amplitude, timestamp: now)
                 
@@ -258,6 +258,34 @@ enum TunerDiagnostics {
         )
     }
     
+    /// One reading as a block pitch detector reports it: PitchTap analyses a whole
+    /// buffer and returns a single pitch for it, so fast wobble inside the buffer
+    /// averages out. Sampling the signal at one instant instead aliases wobble near
+    /// the frame rate into slow drift that no real reading shows; at 11.7 Hz the
+    /// 6.8 Hz jitter below turned into a ±15 cent wander. At 60 Hz a frame is
+    /// 17 ms and this is close to the instantaneous value.
+    private static func bufferAveraged(
+        at t: Double,
+        frameDuration: Double,
+        signal: (Double) -> (pitch: Float, amplitude: Float)
+    ) -> (pitch: Float, amplitude: Float) {
+        let steps = max(1, Int((frameDuration * 480).rounded()))
+        var logPitchSum: Double = 0
+        var liveCount = 0
+        var amplitudeSum: Float = 0
+        for step in 0..<steps {
+            let sample = signal(t - frameDuration * Double(step) / Double(steps))
+            amplitudeSum += sample.amplitude
+            if sample.pitch > 0 {
+                logPitchSum += log2(Double(sample.pitch))
+                liveCount += 1
+            }
+        }
+        // A buffer that is mostly silence reads as silence.
+        guard liveCount * 2 > steps else { return (0, 0) }
+        return (Float(pow(2, logPitchSum / Double(liveCount))), amplitudeSum / Float(steps))
+    }
+
     // Models repeated plucks: transient spike -> settle -> decay -> brief silence.
     private static func syntheticPluckSignal(time t: Double, targetFrequency: Float) -> (pitch: Float, amplitude: Float) {
         let pluckPeriod = 0.55
