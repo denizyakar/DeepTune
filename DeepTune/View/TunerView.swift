@@ -70,8 +70,9 @@ struct TunerView: View {
         }
         .tint(AppTheme.accent)
         .onAppear {
+            // Onboarding asks for the microphone; a user who declined there gets
+            // the in-tab card instead of a second prompt.
             applyAudioTrackingMode(for: selectedTab)
-            ensureMicrophonePermission()
             synchronizeAudioState()
         }
         .onChange(of: selectedTab) { _, newTab in

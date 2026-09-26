@@ -260,3 +260,36 @@ struct ChordFinderDemo: View {
         )
     }
 }
+
+// MARK: - Microphone
+
+struct MicrophoneDemo: View {
+    let isActive: Bool
+
+    private let ringCount = 3
+    private let pulseSeconds = 2.4
+
+    var body: some View {
+        DemoTimeline(isActive: isActive) { time in
+            ZStack {
+                // Rings expand outward in turn, like sound reaching the phone.
+                ForEach(0..<ringCount, id: \.self) { ring in
+                    let phase = ((time / pulseSeconds) + Double(ring) / Double(ringCount))
+                        .truncatingRemainder(dividingBy: 1)
+                    Circle()
+                        .stroke(AppTheme.accent.opacity(0.35 * (1 - phase)), lineWidth: 2)
+                        .frame(width: 96 + 120 * phase, height: 96 + 120 * phase)
+                }
+
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 40, weight: .semibold))
+                    .foregroundStyle(AppTheme.accent)
+                    .frame(width: 96, height: 96)
+                    .background(Circle().fill(AppTheme.accentSoft))
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 240)
+            .appCard()
+        }
+    }
+}
