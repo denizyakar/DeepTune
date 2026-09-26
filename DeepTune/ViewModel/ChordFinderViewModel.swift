@@ -303,7 +303,7 @@ final class ChordFinderViewModel {
             )
         } else {
             lastResult = ChordMatch(
-                name: "Unknown",
+                name: String(localized: "Unknown", comment: "Shown when no chord could be identified."),
                 rootName: "--",
                 confidence: 0.0,
                 observedNoteNames: ChordIdentifier.observedNoteNames(pitchClassCounts: capturedCounts),

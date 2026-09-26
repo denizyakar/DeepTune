@@ -87,14 +87,14 @@ struct ManualStrobeArea: View {
             }
 
             HStack {
-                Text(String(format: "%.1f cents", centsDistance))
+                Text("\(centsDistance, format: .number.precision(.fractionLength(1))) cents")
                     .font(.subheadline.weight(.semibold))
                     .foregroundColor(feedbackColor)
 
                 Spacer()
 
                 if let detectedNote {
-                    Text(String(format: "Nearest %.2f Hz", detectedNote.nearestFrequency))
+                    Text("Nearest \(detectedNote.nearestFrequency, format: .number.precision(.fractionLength(2))) Hz")
                         .font(.caption)
                         .foregroundColor(AppTheme.textSecondary)
                 } else {

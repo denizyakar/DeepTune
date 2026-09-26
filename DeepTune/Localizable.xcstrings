@@ -1,0 +1,176 @@
+{
+  "sourceLanguage" : "en",
+  "strings" : {
+    "" : {
+      "shouldTranslate" : false
+    },
+    "%@ Hz" : {},
+    "%@ cents" : {},
+    "%@ or %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ or %2$@"
+          }
+        }
+      }
+    },
+    "%@ • %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@ • %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%@%lld" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$@%2$lld"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "%lld" : {
+      "shouldTranslate" : false
+    },
+    "%lld drop, open and alternate tunings, grouped so the one you need is easy to find." : {},
+    "%lld tuning options" : {},
+    "%lld%%" : {
+      "shouldTranslate" : false
+    },
+    "%lld-string" : {},
+    "%lld. %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "%1$lld. %2$@"
+          }
+        }
+      },
+      "shouldTranslate" : false
+    },
+    "--" : {
+      "shouldTranslate" : false
+    },
+    "4-String Bass" : {},
+    "4-String Ukulele" : {},
+    "6-String Guitar" : {},
+    "7-String Guitar" : {},
+    "8-String Guitar" : {},
+    "Allow Microphone" : {},
+    "Ambient and drone-friendly 7-string layouts" : {},
+    "Auto" : {},
+    "Auto guides you string by string. Manual shows whatever note you play." : {},
+    "Available" : {},
+    "Beyond standard tuning" : {},
+    "Blues, country, folk and celtic-leaning open tunings" : {},
+    "Captured: %lld" : {},
+    "Chord" : {},
+    "Chord Finder" : {},
+    "Common" : {},
+    "Confidence: %lld%%" : {},
+    "Continue" : {},
+    "Core uke setups that remain ascending in pitch" : {},
+    "DeepTune" : {},
+    "DeepTune needs your microphone" : {},
+    "Detected Chord" : {},
+    "Done" : {},
+    "Down-tuned and alternate-range 4-string options" : {},
+    "Everyday rock, metal, alternative and cover workflows" : {},
+    "Extended-range low tunings for modern rhythm work" : {},
+    "Flat" : {},
+    "Follows any note you play" : {},
+    "Get Started" : {},
+    "Guitar, bass or ukulele" : {},
+    "Heavy Drops" : {},
+    "Highest" : {},
+    "Idle" : {},
+    "In Tune" : {},
+    "It listens to your instrument to find its pitch. Audio is processed on your device and never saved." : {},
+    "Let DeepTune listen" : {},
+    "Listening" : {},
+    "Lowest" : {},
+    "ML model not found in bundle (nmp.mlpackage/mlmodelc). Running fallback detector." : {},
+    "Manual" : {},
+    "Manual Strobe" : {},
+    "Manual mode follows the note you play instead of the selected tuning string." : {},
+    "Microphone access is off" : {},
+    "Midwest emo, alt, shoegaze and math-inspired tunings" : {},
+    "Modern metal and progressive 7-string standards" : {},
+    "Most-used studio and live bass workflows" : {},
+    "Moves to the next string once it’s in tune" : {},
+    "NO SIGNAL" : {},
+    "Name that chord" : {},
+    "Nearest %@ Hz" : {},
+    "Niche / Creative" : {},
+    "Niche / Experimental" : {},
+    "Niche / Genre" : {},
+    "Niche / Heavy" : {},
+    "No Signal" : {},
+    "No chord analyzed yet" : {},
+    "Not Now" : {},
+    "Observed notes: %@" : {},
+    "Off" : {},
+    "On" : {},
+    "Open Settings" : {},
+    "Open and drone-inspired ukulele tunings" : {},
+    "Pick your instrument at the top of the screen and the tuner follows its strings." : {},
+    "Play a chord once and Chord Finder names it, along with close alternatives." : {},
+    "Play a note to detect frequency" : {},
+    "Play a note to start" : {},
+    "Preparing chord model..." : {},
+    "Progress" : {},
+    "Ready" : {},
+    "Ready: play one chord now" : {},
+    "Requires heavier gauge strings and setup awareness" : {},
+    "Root: %@" : {},
+    "Root: %@ or %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Root: %1$@ or %2$@"
+          }
+        }
+      }
+    },
+    "Root: %@ • Lowest note: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Root: %1$@ • Lowest note: %2$@"
+          }
+        }
+      }
+    },
+    "Roots / Slide" : {},
+    "Select Instrument" : {},
+    "Select Tuning" : {},
+    "Sharp" : {},
+    "Skip" : {},
+    "Start" : {},
+    "Stop" : {},
+    "Tap Start, play one chord once, then wait." : {},
+    "The microphone is how DeepTune hears your instrument. Audio is processed on your device and never saved." : {},
+    "Tip: For best accuracy, let the chord ring for a short moment and avoid changing chords while WAIT is visible." : {},
+    "Top Suggestions" : {},
+    "Turn on Microphone for DeepTune in Settings to start tuning." : {},
+    "Two ways to tune" : {},
+    "Unknown" : {
+      "comment" : "Shown when no chord could be identified."
+    },
+    "WAIT" : {},
+    "WAIT - analyzing..." : {}
+  },
+  "version" : "1.0"
+}
