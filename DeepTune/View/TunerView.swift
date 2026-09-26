@@ -8,6 +8,7 @@ private enum TunerTab: Hashable {
 
 struct TunerView: View {
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.openURL) private var openURL
 
     @State private var session: TunerSession
     @State private var autoTuner: AutoTunerViewModel
@@ -17,7 +18,6 @@ struct TunerView: View {
     @State private var showSettings = false
     @State private var showInstrumentPicker = false
     @State private var showTuningPicker = false
-    @State private var showPermissionAlert = false
     @State private var selectedTab: TunerTab = .auto
     @State private var isChordFinderSessionActive = false
 
@@ -38,28 +38,34 @@ struct TunerView: View {
                 .ignoresSafeArea()
 
             TabView(selection: $selectedTab) {
-                AutoTunerView(model: autoTuner, header: header)
-                    .tabItem {
-                        Label("Auto", systemImage: "guitars")
+                requiringMicrophone {
+                    AutoTunerView(model: autoTuner, header: header)
+                }
+                .tabItem {
+                    Label("Auto", systemImage: "guitars")
+                }
+                .tag(TunerTab.auto)
+                .onAppear {
+                    if autoTuner.targetNote == nil {
+                        autoTuner.setTargetNote(session.currentTuning.notes.first)
                     }
-                    .tag(TunerTab.auto)
-                    .onAppear {
-                        if autoTuner.targetNote == nil {
-                            autoTuner.setTargetNote(session.currentTuning.notes.first)
-                        }
-                    }
+                }
 
-                ManualTunerView(model: manualTuner, header: header)
-                    .tabItem {
-                        Label("Manual", systemImage: "waveform.path")
-                    }
-                    .tag(TunerTab.manual)
+                requiringMicrophone {
+                    ManualTunerView(model: manualTuner, header: header)
+                }
+                .tabItem {
+                    Label("Manual", systemImage: "waveform.path")
+                }
+                .tag(TunerTab.manual)
 
-                ChordTabView(session: session, isSessionActive: $isChordFinderSessionActive, header: header)
-                    .tabItem {
-                        Label("Chord", systemImage: "music.note")
-                    }
-                    .tag(TunerTab.chord)
+                requiringMicrophone {
+                    ChordTabView(session: session, isSessionActive: $isChordFinderSessionActive, header: header)
+                }
+                .tabItem {
+                    Label("Chord", systemImage: "music.note")
+                }
+                .tag(TunerTab.chord)
             }
         }
         .tint(AppTheme.accent)
@@ -101,15 +107,20 @@ struct TunerView: View {
         .sheet(isPresented: $showTuningPicker) {
             TuningPickerView(session: session)
         }
-        .alert("Microphone Access Required", isPresented: $showPermissionAlert) {
-            Button("Settings", role: .none) {
-                if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
-                    UIApplication.shared.open(settingsURL)
-                }
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("DeepTune needs microphone access to detect pitch. Please enable it in Settings.")
+    }
+
+    /// Every tab needs the microphone, so without it the tab explains why
+    /// instead of showing a tuner that can never react.
+    @ViewBuilder
+    private func requiringMicrophone<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        if permissionManager.isMicrophoneGranted {
+            content()
+        } else {
+            MicrophoneAccessView(
+                permission: permissionManager.microphonePermission,
+                header: header,
+                onRequestAccess: ensureMicrophonePermission
+            )
         }
     }
 
@@ -164,11 +175,12 @@ struct TunerView: View {
             onTuningTap: { showTuningPicker.toggle() },
             onMicrophoneTap: {
                 // Never been asked: show the system prompt. Denied: only
-                // Settings can help, so say that instead.
+                // Settings can change it, and the tab already says why.
                 if permissionManager.canRequestMicrophoneAccess {
                     ensureMicrophonePermission()
-                } else if !permissionManager.isMicrophoneGranted {
-                    showPermissionAlert = true
+                } else if !permissionManager.isMicrophoneGranted,
+                          let url = URL(string: UIApplication.openSettingsURLString) {
+                    openURL(url)
                 }
             },
             onSettingsTap: { showSettings.toggle() }
