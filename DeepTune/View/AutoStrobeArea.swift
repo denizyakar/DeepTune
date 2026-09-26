@@ -2,7 +2,6 @@ import SwiftUI
 
 struct AutoStrobeArea: View {
     @Environment(\.colorScheme) private var colorScheme
-    @State private var displayedCents: Float = 0
 
     let centsDistance: Float
     let targetNote: Note?
@@ -13,12 +12,10 @@ struct AutoStrobeArea: View {
     private let maxVisualOffset: CGFloat = 152.0
     // Wider visual range makes near-center behavior feel calmer (roughly "major line" ~= 8 cents).
     private let visualRangeCents: Float = 80.0
-    private let displaySmoothingFactor: Float = 0.28
-    private let maxDisplayStepPerUpdate: Float = 8.0
 
     private var feedbackColor: Color {
         AppTheme.autoStrobeRampColor(
-            centsDistance: displayedCents,
+            centsDistance: centsDistance,
             isSignalDetected: isSignalDetected,
             visualRangeCents: visualRangeCents
         )
@@ -60,7 +57,10 @@ struct AutoStrobeArea: View {
                     .fill(feedbackColor)
                     .frame(width: 6.6, height: 70)
                     .offset(x: clampedOffset)
-                    .animation(.easeOut(duration: 0.08), value: displayedCents)
+                    // Readings arrive about every 85 ms; a spring retargets without
+                    // losing speed, so the needle glides between them. All smoothing
+                    // of the value itself happens in the view model.
+                    .animation(.smooth(duration: 0.15), value: centsDistance)
             }
 
             if !isSignalDetected {
@@ -74,15 +74,6 @@ struct AutoStrobeArea: View {
             }
         }
         .frame(height: 94)
-        .onAppear {
-            displayedCents = centsDistance
-        }
-        .onChange(of: centsDistance) { _, newValue in
-            let blended = (displayedCents * (1.0 - displaySmoothingFactor)) + (newValue * displaySmoothingFactor)
-            let delta = blended - displayedCents
-            let limitedDelta = max(-maxDisplayStepPerUpdate, min(maxDisplayStepPerUpdate, delta))
-            displayedCents += limitedDelta
-        }
     }
 
     private var targetBadgeFill: Color {
@@ -94,7 +85,7 @@ struct AutoStrobeArea: View {
     }
 
     private var clampedOffset: CGFloat {
-        let normalized = CGFloat(displayedCents / visualRangeCents)
+        let normalized = CGFloat(centsDistance / visualRangeCents)
         return max(-maxVisualOffset, min(maxVisualOffset, normalized * maxVisualOffset))
     }
 }
