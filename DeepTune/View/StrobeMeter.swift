@@ -56,6 +56,9 @@ struct StrobeMeter: View {
                     // Readings arrive about every 85 ms; a spring retargets without
                     // losing speed, so the needle glides between them.
                     .animation(.smooth(duration: 0.15), value: centsDistance)
+                    // A new note starts a new needle rather than gliding across
+                    // centre, which would read as a moment in tune.
+                    .id(noteLabel)
             }
 
             if !isSignalDetected {

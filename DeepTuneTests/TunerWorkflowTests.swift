@@ -101,6 +101,36 @@ final class TunerWorkflowTests: XCTestCase {
         XCTAssertNil(manual.manualHighestFrequency)
     }
 
+    func testManualNeedleDoesNotSweepThroughCentreWhenTheNoteChanges() throws {
+        let (session, _, manual) = makeTuner(defaults: try makeIsolatedDefaults())
+        session.setActiveMode(.manual)
+        let calibration = PitchCalibration.standard
+        let dt = 1 / 11.7
+        var time = Date(timeIntervalSince1970: 0)
+
+        func play(midi: Int, cents: Double, frames: Int) -> [Float] {
+            let frequency = Float(calibration.frequency(ofMIDI: midi) * pow(2, cents / 1200))
+            var readings: [Float] = []
+            for _ in 0..<frames {
+                session.debugInjectFrame(pitch: frequency, amplitude: 0.1, timestamp: time)
+                time.addTimeInterval(dt)
+                readings.append(manual.manualCentsDistance)
+            }
+            return readings
+        }
+
+        // A2 played 30 cents sharp, then the string is pushed up to A#2 played
+        // 30 cents flat. The pitch is never within 20 cents of a note, so the
+        // needle must never show in tune on the way.
+        _ = play(midi: 45, cents: 30, frames: 20)
+        let transition = play(midi: 46, cents: -30, frames: 20)
+
+        XCTAssertEqual(session.detectedNote?.midiNumber, 46, "the reading should have moved to A#2")
+        for (index, reading) in transition.enumerated() {
+            XCTAssertGreaterThan(abs(reading), 7, "frame \(index) read \(reading) cents: a false in-tune flash")
+        }
+    }
+
     func testUnselectableInstrumentIsNotRestored() throws {
         let defaults = try makeIsolatedDefaults()
 

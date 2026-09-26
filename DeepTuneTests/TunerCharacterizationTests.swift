@@ -9,7 +9,7 @@ import XCTest
 /// behaviour, update the golden hash in the same commit and say why.
 @MainActor
 final class TunerCharacterizationTests: XCTestCase {
-    private static let goldenTraceHash = "38670351ad68c5d5"
+    private static let goldenTraceHash = "9c01efa558783787"
 
     private let frameInterval: TimeInterval = 0.02
 
