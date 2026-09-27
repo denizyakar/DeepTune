@@ -75,7 +75,7 @@ private struct AutoMeterView: View {
         AppTheme.autoStrobeRampColor(
             centsDistance: model.autoCentsDistance,
             isSignalDetected: model.isTargetSignalDetected,
-            visualRangeCents: 80.0
+            visualRangeCents: StrobeMeter.visualRangeCents
         )
     }
 

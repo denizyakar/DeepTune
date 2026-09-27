@@ -4,9 +4,10 @@ import SwiftUI
 /// one scale, one colour ramp, one motion. Smoothing happens in the view
 /// models; this only draws the value it is given.
 struct StrobeMeter: View {
-    /// ±50 cents is the whole gap to the neighbouring note, and the same scale
-    /// in both modes means a needle position always means the same deviation.
-    static let visualRangeCents: Float = 50
+    /// The same scale in both modes means a needle position always means the
+    /// same deviation. ±80 rather than the ±50 gap to the next note keeps
+    /// reading jitter small on screen near centre, where tuning happens.
+    static let visualRangeCents: Float = 80
 
     @Environment(\.colorScheme) private var colorScheme
     @State private var width: CGFloat = 0
@@ -83,7 +84,7 @@ struct StrobeMeter: View {
         )
     }
 
-    /// Full scale lands on the outermost tick, so each tick is 5 cents.
+    /// Full scale lands on the outermost tick, so each tick is 8 cents.
     private var needleOffset: CGFloat {
         let outermostTick = width / CGFloat(Self.tickCount) * CGFloat(Self.tickCount / 2)
         let normalized = CGFloat(max(-1, min(1, centsDistance / Self.visualRangeCents)))

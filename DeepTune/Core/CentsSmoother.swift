@@ -35,10 +35,13 @@ nonisolated struct CentsSmoother {
 
         // Derived from the per-event values tuned on device, where the tuner
         // received about 23 readings a second: blend 0.2 and 0.08, median of 5.
+        // The near time constant also absorbs a second 0.13 s average the Auto
+        // view used to run on top; 0.25 s matches that chain's noise and step
+        // response at 11.7 Hz while following a turning peg more closely.
         static let standard = Configuration(
             window: 0.21,
             minimumSamples: 5,
-            timeConstant: 0.19,
+            timeConstant: 0.25,
             farTimeConstant: 0.51,
             farThresholdCents: 110,
             rateLimit: 120,
