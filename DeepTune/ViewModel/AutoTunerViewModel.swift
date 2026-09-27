@@ -28,7 +28,6 @@ final class AutoTunerViewModel {
 
     private let userDefaults: UserDefaults
 
-    private let centsSmoothingFactor: Float = 0.2
     private let inTuneEnterWindowCents: Float = 7.0
     private let inTuneExitWindowCents: Float = 11.0
     private let autoAcquireAcceptanceWindowCents: Float = 950.0
@@ -37,12 +36,17 @@ final class AutoTunerViewModel {
 
     private var successLatchedUntil: Date?
     private var tuneProgressSeconds: Double = 0.0
-    private var recentTargetCentsSamples: [Float] = []
+    private var centsSmoother: CentsSmoother
     private var isAutoProgressPending = false
 
-    init(session: TunerSession, userDefaults: UserDefaults = .standard) {
+    init(
+        session: TunerSession,
+        userDefaults: UserDefaults = .standard,
+        smoothing: CentsSmoother.Configuration = .standard
+    ) {
         self.session = session
         self.userDefaults = userDefaults
+        self.centsSmoother = CentsSmoother(configuration: smoothing)
         self.targetNote = session.currentTuning.notes.first
         self.isAutoProgressEnabled = userDefaults.object(forKey: PersistenceKey.autoProgressEnabled) as? Bool ?? false
 
@@ -66,7 +70,7 @@ final class AutoTunerViewModel {
 
         targetNote = note
         isTargetSignalDetected = false
-        recentTargetCentsSamples.removeAll()
+        centsSmoother.reset()
         applyTrackingTargetToConductor()
         resetAutoSuccessState()
     }
@@ -99,7 +103,7 @@ final class AutoTunerViewModel {
 
     private func handleSilentFrame(isWithinHoldWindow: Bool, frameDelta: TimeInterval, now: Date) {
         if session.activeMode == .auto {
-            isTargetSignalDetected = isWithinHoldWindow && (currentTargetIsCompleted || !recentTargetCentsSamples.isEmpty)
+            isTargetSignalDetected = isWithinHoldWindow && (currentTargetIsCompleted || centsSmoother.hasSamples)
         } else {
             isTargetSignalDetected = false
         }
@@ -137,30 +141,7 @@ final class AutoTunerViewModel {
         }
 
         isTargetSignalDetected = true
-
-        // Stabilizes the meter by rejecting fast harmonic spikes and using a median center.
-        recentTargetCentsSamples.append(targetCents)
-        if recentTargetCentsSamples.count > 5 {
-            recentTargetCentsSamples.removeFirst(recentTargetCentsSamples.count - 5)
-        }
-        let medianTargetCents = median(of: recentTargetCentsSamples) ?? targetCents
-        let targetDelta = abs(medianTargetCents - autoCentsDistance)
-        let adaptiveFactor: Float = targetDelta > 110 ? 0.08 : centsSmoothingFactor
-        let smoothedTargetCents = smoothed(previous: autoCentsDistance, current: medianTargetCents, factor: adaptiveFactor)
-
-        // Limits unrealistically fast meter jumps caused by harmonics/noise spikes.
-        let dynamicRateLimit: Float
-        if abs(autoCentsDistance) > 300 {
-            dynamicRateLimit = 320
-        } else if abs(autoCentsDistance) > 90 {
-            dynamicRateLimit = 180
-        } else {
-            dynamicRateLimit = 120
-        }
-        let maxStep = Float(frameDelta) * dynamicRateLimit
-        let delta = smoothedTargetCents - autoCentsDistance
-        let limitedDelta = max(-maxStep, min(maxStep, delta))
-        autoCentsDistance += limitedDelta
+        autoCentsDistance = centsSmoother.add(targetCents, at: now, elapsed: frameDelta)
 
         handleAutoSuccessIfNeeded(referencePitch: pitch, now: now, frameDelta: frameDelta)
     }
@@ -237,7 +218,7 @@ final class AutoTunerViewModel {
         inTuneDuration = tuneProgressSeconds
         isTuningSuccessful = false
         successLatchedUntil = nil
-        recentTargetCentsSamples.removeAll()
+        centsSmoother.reset()
     }
 
     private func refreshSuccessLatch(now: Date) {
@@ -264,18 +245,6 @@ final class AutoTunerViewModel {
         }
 
         session.setTrackingTargetFrequency(Float(targetNote.frequency))
-    }
-
-    private func median(of values: [Float]) -> Float? {
-        guard !values.isEmpty else { return nil }
-        let sorted = values.sorted()
-        let middle = sorted.count / 2
-
-        if sorted.count.isMultiple(of: 2) {
-            return (sorted[middle - 1] + sorted[middle]) / 2
-        } else {
-            return sorted[middle]
-        }
     }
 
     private func persistAutoProgressState() {

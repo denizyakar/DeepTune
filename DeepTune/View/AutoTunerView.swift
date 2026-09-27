@@ -46,12 +46,11 @@ private struct AutoMeterView: View {
 
     var body: some View {
         VStack(spacing: 6) {
-            AutoStrobeArea(
+            StrobeMeter(
                 centsDistance: model.autoCentsDistance,
-                targetNote: model.targetNote,
-                isTuningSuccessful: model.isTuningSuccessful,
+                noteLabel: model.targetNote?.fullName,
                 isSignalDetected: model.isTargetSignalDetected,
-                hasPitchReference: model.hasPitchReference
+                showsNeedle: model.hasPitchReference
             )
 
             HStack {
@@ -76,7 +75,7 @@ private struct AutoMeterView: View {
         AppTheme.autoStrobeRampColor(
             centsDistance: model.autoCentsDistance,
             isSignalDetected: model.isTargetSignalDetected,
-            visualRangeCents: 80.0
+            visualRangeCents: StrobeMeter.visualRangeCents
         )
     }
 

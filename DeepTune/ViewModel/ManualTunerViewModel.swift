@@ -13,7 +13,9 @@ final class ManualTunerViewModel {
     var detectedNote: DetectedNote? { session.detectedNote }
     var isSignalDetected: Bool { session.isSignalDetected }
 
-    private let centsSmoothingFactor: Float = 0.2
+    // The same smoothing as Auto, so both meters settle alike.
+    private var centsSmoother = CentsSmoother()
+    private var smoothedMIDI: Int?
 
     init(session: TunerSession) {
         self.session = session
@@ -24,8 +26,8 @@ final class ManualTunerViewModel {
 
     private func handle(_ event: TunerSessionEvent) {
         switch event {
-        case .frame(.live(_, let note, _, _)):
-            handleLiveFrame(note: note)
+        case .frame(.live(_, let note, let frameDelta, let now)):
+            handleLiveFrame(note: note, frameDelta: frameDelta, now: now)
         case .frame(.silent):
             break
         case .modeChanged(let mode):
@@ -39,12 +41,16 @@ final class ManualTunerViewModel {
 
     // Runs in every mode, not only on this screen, so the reading is already
     // settled when the user switches here.
-    private func handleLiveFrame(note: DetectedNote) {
-        manualCentsDistance = smoothed(
-            previous: manualCentsDistance,
-            current: max(-50.0, min(50.0, note.centsFromEqualTempered)),
-            factor: centsSmoothingFactor
-        )
+    private func handleLiveFrame(note: DetectedNote, frameDelta: TimeInterval, now: Date) {
+        let cents = max(-50.0, min(50.0, note.centsFromEqualTempered))
+        // Cents are measured from the nearest note, so when that note changes the
+        // reading jumps from one edge to the other. Averaging across the jump would
+        // sweep the needle through centre and flash a false in-tune; restart instead.
+        if note.midiNumber != smoothedMIDI {
+            smoothedMIDI = note.midiNumber
+            centsSmoother.reset(to: cents)
+        }
+        manualCentsDistance = centsSmoother.add(cents, at: now, elapsed: frameDelta)
 
         guard session.activeMode == .manual else { return }
 
