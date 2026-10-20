@@ -9,6 +9,8 @@ import Foundation
 /// because a turning peg moves the pitch a cent or two per frame at most.
 struct RecordingMetrics {
     let recording: String
+    let detector: String
+    let isPeggingTake: Bool
     let mode: HarnessMode
     /// Blocks within 30 dB of the take's loudest block: the string is ringing.
     let ringingFrames: Int
@@ -37,10 +39,12 @@ struct RecordingMetrics {
     private static let ringingWindowDecibels: Float = 30
     private static let octaveErrorCents: Float = 600
 
-    init(recording: Recording, frames: [FrameRecord], mode: HarnessMode) {
+    init(recording: Recording, detector: String, frames: [FrameRecord], mode: HarnessMode) {
         self.recording = recording.name
+        self.detector = detector
         self.mode = mode
         let isPeggingTake = recording.take.contains("burgu")
+        self.isPeggingTake = isPeggingTake
         let expectedFrequency = Float(440 * pow(2, Double(recording.expectedMIDI - 69) / 12))
         func rawCents(_ frame: FrameRecord) -> Float {
             1200 * log2(frame.raw.pitch / expectedFrequency)
@@ -129,15 +133,16 @@ struct RecordingMetrics {
     }
 
     static let header = [
-        "recording".padding(toLength: 34, withPad: " ", startingAt: 0),
-        "mode  ", "ring", "live%", "drop%", "oct%", "wrong%", "jump/100", "spread", "rawSprd", "settle", "settled",
+        "recording".padding(toLength: 30, withPad: " ", startingAt: 0),
+        "detect", "mode  ", "ring", "live%", "drop%", "oct%", "wrong%", "jump/100", "spread", "rawSprd", "settle", "settled",
     ].joined(separator: " ")
 
     var row: String {
         func percent(_ value: Double?) -> String { value.map { String(format: "%5.1f", $0 * 100) } ?? "    -" }
         func number(_ value: Double?, _ format: String) -> String { value.map { String(format: format, $0) } ?? "     -" }
         return [
-            recording.padding(toLength: 34, withPad: " ", startingAt: 0),
+            recording.padding(toLength: 30, withPad: " ", startingAt: 0),
+            detector.padding(toLength: 6, withPad: " ", startingAt: 0),
             mode.rawValue.padding(toLength: 6, withPad: " ", startingAt: 0),
             String(format: "%4d", ringingFrames),
             percent(liveRate), percent(rawDropoutRate), percent(rawOctaveErrorRate), percent(wrongNoteRate) + " ",

@@ -35,6 +35,36 @@ final class PtrackDetector: BlockPitchDetector {
     }
 }
 
+/// YIN fed the same blocks. The signal gate's thresholds were tuned on
+/// ptrack's level, so YIN's level is put on that scale: on the recordings,
+/// ptrack's level is 2.53·rms^0.757 of the block (R² 0.95). The fit only
+/// holds against the block *before* the one ptrack was just given, because
+/// ptrack reports each reading one block late.
+struct YINBlockDetector: BlockPitchDetector {
+    let name = "yin"
+    private var detector: YINPitchDetector
+    private var history: [Float] = []
+
+    init(sampleRate: Double) {
+        detector = YINPitchDetector(configuration: .init(sampleRate: sampleRate))
+    }
+
+    static func ptrackScaleLevel(rms: Float) -> Float {
+        rms > 0 ? 2.53 * pow(rms, 0.757) : 0
+    }
+
+    mutating func analyze(_ block: inout [Float]) -> PitchData {
+        history.append(contentsOf: block)
+        let required = detector.requiredSampleCount
+        if history.count > required {
+            history.removeFirst(history.count - required)
+        }
+        let reading = history.withUnsafeBufferPointer { detector.detect($0) }
+        let rms = sqrt(block.reduce(0) { $0 + $1 * $1 } / Float(max(1, block.count)))
+        return PitchData(pitch: reading.frequency, amplitude: Self.ptrackScaleLevel(rms: rms))
+    }
+}
+
 /// One take of one open string, read from the recordings folder.
 struct Recording {
     /// The folder the take came from: one folder per way of playing.
